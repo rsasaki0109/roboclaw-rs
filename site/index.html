@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>roboclaw-rs</title>
+    <meta
+      name="description"
+      content="Agent-first robotics workspace in Rust with ROS 2 hooks, YAML skills, simulator and hardware backends, and LLM-plannable execution."
+    />
+    <meta name="theme-color" content="#163c39" />
+    <link rel="canonical" href="https://rsasaki0109.github.io/roboclaw-rs/" />
+    <meta property="og:title" content="roboclaw-rs" />
+    <meta
+      property="og:description"
+      content="Agent-first robotics workspace in Rust with ROS 2 hooks, YAML skills, simulator and hardware backends, and LLM-plannable execution."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://rsasaki0109.github.io/roboclaw-rs/" />
+    <meta
+      property="og:image"
+      content="https://rsasaki0109.github.io/roboclaw-rs/assets/github-social-preview.png"
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+JP:wght@400;500;700&family=Space+Grotesk:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="site-header">
+        <a class="brand" href="./">roboclaw-rs</a>
+        <nav class="site-nav">
+          <a href="#runtime">Runtime</a>
+          <a href="#experiments">Experiments</a>
+          <a href="#demo">Demo</a>
+          <a href="#docs">Docs</a>
+        </nav>
+      </header>
+
+      <main>
+        <section class="hero">
+          <div class="hero-copy">
+            <p class="eyebrow">Rust • ROS 2 • Skills • LLM • Sim-first</p>
+            <h1>Agent-first robotics, not just another robot driver.</h1>
+            <p class="hero-text">
+              <code>roboclaw-rs</code> is a Rust robotics workspace that keeps the runtime core narrow and pushes design
+              exploration into comparable experiment suites. One agent loop, one skill catalog, one backend boundary.
+            </p>
+            <div class="hero-actions">
+              <a class="button primary" href="https://github.com/rsasaki0109/roboclaw-rs">View Repository</a>
+              <a class="button secondary" href="#demo">See Demo Flow</a>
+            </div>
+            <div class="hero-chips">
+              <span>sim-first</span>
+              <span>YAML skills</span>
+              <span>ROS 2 hooks</span>
+              <span>local / cloud planners</span>
+            </div>
+          </div>
+
+          <aside class="hero-panel">
+            <div class="stack-card stack-card-1">
+              <span class="stack-label">Planner</span>
+              <strong>PlanDecision</strong>
+              <p>mock | local | OpenAI | Claude</p>
+            </div>
+            <div class="stack-card stack-card-2">
+              <span class="stack-label">Skills</span>
+              <strong>SkillCatalog</strong>
+              <p>YAML loading, recovery metadata, checkpoint resume</p>
+            </div>
+            <div class="stack-card stack-card-3">
+              <span class="stack-label">Gateway</span>
+              <strong>observe -> retry -> replan</strong>
+              <p>ROS2 action/state telemetry with one orchestration loop</p>
+            </div>
+            <div class="stack-card stack-card-4">
+              <span class="stack-label">Backends</span>
+              <strong>sim + real robot</strong>
+              <p>shared command API across Gazebo and hardware</p>
+            </div>
+          </aside>
+        </section>
+
+        <section class="panel-grid" id="runtime">
+          <article class="panel">
+            <p class="panel-kicker">Stable Core</p>
+            <h2>The runtime surface stays deliberately small.</h2>
+            <ul class="list">
+              <li><code>Planner -> PlanDecision</code></li>
+              <li><code>SkillCatalog</code> plus YAML recovery metadata</li>
+              <li><code>Tool</code>, <code>RobotBackend</code>, <code>Ros2Bridge</code>, <code>Memory</code></li>
+              <li><code>instruction -> plan -> execute -> observe -> memory -> resume/replan</code></li>
+            </ul>
+          </article>
+
+          <article class="panel accent">
+            <p class="panel-kicker">Why it matters</p>
+            <h2>Design pressure stays outside the core until it earns its way in.</h2>
+            <p>
+              Promotion, rollback, provenance, prompt shaping, recovery routing, observation reducers, and lag budgets
+              all compete in the <code>experiments/</code> tree first. The runtime only adopts the minimum boundary that
+              survives repeated comparison.
+            </p>
+          </article>
+        </section>
+
+        <section class="experiments-band" id="experiments">
+          <div class="section-heading">
+            <p class="eyebrow">Experiment → convergence</p>
+            <h2>The repo acts like an exploration engine.</h2>
+          </div>
+          <div class="experiment-cards">
+            <article class="experiment-card">
+              <h3>Planner Selection</h3>
+              <p>Compare multiple planner shapes against the same instruction set and metrics.</p>
+              <span>catalog score · pipeline router · keyword rules</span>
+            </article>
+            <article class="experiment-card">
+              <h3>Gateway Replanning</h3>
+              <p>Stress retry, resume, and recovery behavior without mutating the stable runtime seam.</p>
+              <span>resume-aware replan · fail fast · direct resume first</span>
+            </article>
+            <article class="experiment-card">
+              <h3>Provenance and Rollback</h3>
+              <p>Model how promotion, rollback, lag, and artifact trust should behave across release surfaces.</p>
+              <span>promotion rules · rollback budgets · stitching budgets</span>
+            </article>
+          </div>
+        </section>
+
+        <section class="demo-layout" id="demo">
+          <div class="section-heading">
+            <p class="eyebrow">Runtime demo</p>
+            <h2>Pick, recover, resume, and compare planners.</h2>
+          </div>
+          <div class="demo-grid">
+            <article class="terminal-card">
+              <div class="terminal-header">
+                <span></span><span></span><span></span>
+              </div>
+              <pre><code>$ cargo run --example pick_and_place -- \
+  "Use the simulator to pick up the red cube and place it in bin_a."
+
+planner_provider=local
+selected_skill=pick_and_place
+step_completed=detect_object
+step_completed=move_to_object
+step_completed=grasp
+step_completed=place_object
+completed=true</code></pre>
+              <button class="copy-button" data-copy='cargo run --example pick_and_place -- "Use the simulator to pick up the red cube and place it in bin_a."'>
+                Copy command
+              </button>
+            </article>
+
+            <article class="demo-notes">
+              <div class="note">
+                <span class="note-index">01</span>
+                <div>
+                  <h3>Planner routing</h3>
+                  <p>Mock, local, and cloud planners target the same YAML skill catalog through one contract.</p>
+                </div>
+              </div>
+              <div class="note">
+                <span class="note-index">02</span>
+                <div>
+                  <h3>Observation-driven loop</h3>
+                  <p>Each step can declare expectations, retry budgets, and resume checkpoints.</p>
+                </div>
+              </div>
+              <div class="note">
+                <span class="note-index">03</span>
+                <div>
+                  <h3>ROS 2 seam</h3>
+                  <p><code>/cmd_vel</code>, <code>/joint_states</code>, <code>/roboclaw/action</code>, and <code>/roboclaw/state</code> stay visible as the integration boundary.</p>
+                </div>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="docs-strip" id="docs">
+          <div class="section-heading">
+            <p class="eyebrow">Reference</p>
+            <h2>Read the runtime, then inspect the evidence.</h2>
+          </div>
+          <div class="doc-links">
+            <a href="https://github.com/rsasaki0109/roboclaw-rs/blob/main/README.md">
+              <strong>README</strong>
+              <span>Workspace goals, runtime shape, and usage.</span>
+            </a>
+            <a href="https://github.com/rsasaki0109/roboclaw-rs/blob/main/docs/interfaces.md">
+              <strong>interfaces.md</strong>
+              <span>The current minimum interface boundary.</span>
+            </a>
+            <a href="https://github.com/rsasaki0109/roboclaw-rs/blob/main/docs/experiments.md">
+              <strong>experiments.md</strong>
+              <span>Suite-by-suite results and frontier summaries.</span>
+            </a>
+            <a href="https://github.com/rsasaki0109/roboclaw-rs/blob/main/docs/decisions.md">
+              <strong>decisions.md</strong>
+              <span>What stays provisional and why.</span>
+            </a>
+          </div>
+        </section>
+      </main>
+
+      <footer class="site-footer">
+        <p>roboclaw-rs</p>
+        <div>
+          <a href="https://github.com/rsasaki0109/roboclaw-rs">GitHub</a>
+          <a href="https://github.com/rsasaki0109/roboclaw-rs/tree/main/examples">Examples</a>
+          <a href="https://github.com/rsasaki0109/roboclaw-rs/tree/main/experiments">Experiments</a>
+        </div>
+      </footer>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

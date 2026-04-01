@@ -6,6 +6,8 @@
 
 Tagline: Agent-first robotics workspace in Rust with ROS 2 hooks, YAML skills, simulator and hardware backends, and LLM-plannable execution.
 
+Website: `https://rsasaki0109.github.io/roboclaw-rs/`
+
 ## Goals
 
 - Rust implementation
@@ -299,7 +301,8 @@ cargo run --example planner_experiments -- --write-docs
 ## GitHub Metadata
 
 - About description: `Rust-first, agent-first robotics workspace with ROS 2 hooks, YAML skills, simulator/hardware backends, and LLM-plannable execution.`
-- About homepage: `https://github.com/rsasaki0109/roboclaw-rs#readme`
+- About homepage: `https://rsasaki0109.github.io/roboclaw-rs/`
+- GitHub Pages: `https://rsasaki0109.github.io/roboclaw-rs/`
 - Social preview asset: `docs/assets/github-social-preview.png`
 - GitHub UI path for upload: `Settings -> General -> Social preview`
 
