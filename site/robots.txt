@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://rsasaki0109.github.io/roboclaw-rs/sitemap.xml
