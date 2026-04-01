@@ -1,0 +1,82 @@
+[
+  {
+    "id": "feed_fast_tighten",
+    "suite": "cross_provider_validation",
+    "surface": "release_feed",
+    "current_budget_hours": 8,
+    "observed_lag_hours": [1, 2, 2, 3, 2, 1],
+    "expected_decision_kind": "budget_lower",
+    "expected_budget_hours": 6,
+    "why": "Consistently fast feed publication should tighten the budget."
+  },
+  {
+    "id": "docs_moderate_keep",
+    "suite": "planner_prompt_shaping",
+    "surface": "docs_portal",
+    "current_budget_hours": 12,
+    "observed_lag_hours": [5, 6, 7, 8, 9, 7],
+    "expected_decision_kind": "budget_keep",
+    "expected_budget_hours": 12,
+    "why": "Moderate but stable docs lag should keep the existing budget."
+  },
+  {
+    "id": "registry_slow_raise",
+    "suite": "planner_selection",
+    "surface": "package_registry",
+    "current_budget_hours": 24,
+    "observed_lag_hours": [22, 24, 26, 28, 30, 27],
+    "expected_decision_kind": "budget_raise",
+    "expected_budget_hours": 30,
+    "why": "A slower registry trace should raise the registry-specific lag budget."
+  },
+  {
+    "id": "api_docs_very_fast_tighten",
+    "suite": "ros2_observation_ingestion",
+    "surface": "api_docs",
+    "current_budget_hours": 12,
+    "observed_lag_hours": [1, 2, 3, 2, 4],
+    "expected_decision_kind": "budget_lower",
+    "expected_budget_hours": 6,
+    "why": "API docs can be calibrated tighter when the trace stays consistently fast."
+  },
+  {
+    "id": "registry_spiky_hold",
+    "suite": "gateway_replanning",
+    "surface": "package_registry",
+    "current_budget_hours": 24,
+    "observed_lag_hours": [8, 10, 12, 60, 72, 14],
+    "expected_decision_kind": "budget_hold",
+    "expected_budget_hours": 24,
+    "why": "A registry trace with multiple severe outliers should hold calibration instead of rewriting the budget."
+  },
+  {
+    "id": "docs_speedup_tighten",
+    "suite": "promotion_provenance",
+    "surface": "docs_portal",
+    "current_budget_hours": 18,
+    "observed_lag_hours": [4, 5, 6, 7, 5, 6],
+    "expected_decision_kind": "budget_lower",
+    "expected_budget_hours": 12,
+    "why": "Docs that have sped up enough should tighten back down to the docs floor."
+  },
+  {
+    "id": "feed_recent_regression_raise",
+    "suite": "promotion_environment_provenance",
+    "surface": "release_feed",
+    "current_budget_hours": 6,
+    "observed_lag_hours": [1, 2, 2, 7, 8, 9],
+    "expected_decision_kind": "budget_raise",
+    "expected_budget_hours": 10,
+    "why": "A feed with a clear recent regression should raise its budget beyond the old default."
+  },
+  {
+    "id": "docs_one_outlier_keep",
+    "suite": "tool_output_validation",
+    "surface": "docs_portal",
+    "current_budget_hours": 12,
+    "observed_lag_hours": [5, 6, 7, 20, 6, 7],
+    "expected_decision_kind": "budget_keep",
+    "expected_budget_hours": 12,
+    "why": "A single docs outlier should not force either a raise or a hold."
+  }
+]

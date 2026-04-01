@@ -1,0 +1,15 @@
+[package]
+name = "roboclaw-ros2"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+rclrs = { version = "0.7", optional = true }
+rosidl_runtime_rs = { version = "0.6", optional = true }
+
+[features]
+default = []
+ros2 = ["dep:rclrs", "dep:rosidl_runtime_rs"]

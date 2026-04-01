@@ -1,0 +1,122 @@
+[
+  {
+    "id": "declared_checkpoint_confirmed",
+    "suite": "resume_policy",
+    "current_reference": "declared_checkpoint",
+    "environment_snapshots": [
+      {"environment":"ci","decision_kind":"keep_promoted","reference":"declared_checkpoint","documented":true,"critical":true},
+      {"environment":"local_sim","decision_kind":"keep_promoted","reference":"declared_checkpoint","documented":true,"critical":false},
+      {"environment":"hardware_lab","decision_kind":"keep_promoted","reference":"declared_checkpoint","documented":true,"critical":true}
+    ],
+    "expected_decision_kind": "environment_confirmed",
+    "expected_reference": "declared_checkpoint",
+    "why": "Critical and non-critical environments all agree on the same promoted surface."
+  },
+  {
+    "id": "pipeline_router_superseded",
+    "suite": "planner_selection",
+    "current_reference": "catalog_score",
+    "environment_snapshots": [
+      {"environment":"ci","decision_kind":"replace_reference","reference":"pipeline_router","documented":true,"critical":true},
+      {"environment":"hardware_lab","decision_kind":"keep_promoted","reference":"catalog_score","documented":true,"critical":true},
+      {"environment":"local_sim","decision_kind":"replace_reference","reference":"pipeline_router","documented":true,"critical":false},
+      {"environment":"field_trial","decision_kind":"replace_reference","reference":"pipeline_router","documented":true,"critical":false}
+    ],
+    "expected_decision_kind": "environment_superseded",
+    "expected_reference": "pipeline_router",
+    "why": "Most environments have moved to the challenger even though one critical environment is still lagging."
+  },
+  {
+    "id": "critical_consensus_prevents_supersede",
+    "suite": "ros2_observation_ingestion",
+    "current_reference": "stream_reducer",
+    "environment_snapshots": [
+      {"environment":"ci","decision_kind":"keep_promoted","reference":"stream_reducer","documented":true,"critical":true},
+      {"environment":"hardware_lab","decision_kind":"keep_promoted","reference":"stream_reducer","documented":true,"critical":true},
+      {"environment":"local_sim","decision_kind":"replace_reference","reference":"action_state_join","documented":true,"critical":false},
+      {"environment":"field_trial","decision_kind":"replace_reference","reference":"action_state_join","documented":true,"critical":false},
+      {"environment":"staging_demo","decision_kind":"replace_reference","reference":"action_state_join","documented":true,"critical":false}
+    ],
+    "expected_decision_kind": "environment_gap",
+    "expected_reference": null,
+    "why": "Non-critical environments prefer the challenger, but critical environments still converge on the current reference."
+  },
+  {
+    "id": "prompt_gap_missing_hardware",
+    "suite": "planner_prompt_shaping",
+    "current_reference": "prompt_constrained",
+    "environment_snapshots": [
+      {"environment":"hardware_lab","decision_kind":"keep_promoted","reference":"prompt_constrained","documented":false,"critical":true},
+      {"environment":"ci","decision_kind":"keep_promoted","reference":"prompt_constrained","documented":true,"critical":true},
+      {"environment":"local_sim","decision_kind":"keep_promoted","reference":"prompt_constrained","documented":true,"critical":false}
+    ],
+    "expected_decision_kind": "environment_gap",
+    "expected_reference": null,
+    "why": "A missing critical provenance note leaves the deployment story incomplete."
+  },
+  {
+    "id": "tolerant_contract_blocked",
+    "suite": "tool_output_validation",
+    "current_reference": "tolerant_contract",
+    "environment_snapshots": [
+      {"environment":"local_sim","decision_kind":"keep_promoted","reference":"tolerant_contract","documented":true,"critical":false},
+      {"environment":"ci","decision_kind":"keep_promoted","reference":"tolerant_contract","documented":true,"critical":true},
+      {"environment":"hardware_lab","decision_kind":"rollback_reference","reference":"tolerant_contract","documented":true,"critical":true}
+    ],
+    "expected_decision_kind": "environment_blocked",
+    "expected_reference": null,
+    "why": "A critical environment has already forced rollback, so deployment provenance is blocked."
+  },
+  {
+    "id": "stream_reducer_gap_noncritical",
+    "suite": "ros2_observation_ingestion",
+    "current_reference": "stream_reducer",
+    "environment_snapshots": [
+      {"environment":"hardware_lab","decision_kind":"defer_rollback","reference":"stream_reducer","documented":false,"critical":false},
+      {"environment":"ci","decision_kind":"keep_promoted","reference":"stream_reducer","documented":true,"critical":true},
+      {"environment":"local_sim","decision_kind":"keep_promoted","reference":"stream_reducer","documented":true,"critical":false}
+    ],
+    "expected_decision_kind": "environment_gap",
+    "expected_reference": null,
+    "why": "Even a non-critical undocumented environment leaves the rollout provenance incomplete."
+  },
+  {
+    "id": "resume_aware_confirmed",
+    "suite": "gateway_replanning",
+    "current_reference": "resume_aware_replan",
+    "environment_snapshots": [
+      {"environment":"ci","decision_kind":"keep_promoted","reference":"resume_aware_replan","documented":true,"critical":true},
+      {"environment":"sim_demo","decision_kind":"keep_promoted","reference":"resume_aware_replan","documented":true,"critical":false},
+      {"environment":"field_trial","decision_kind":"keep_promoted","reference":"resume_aware_replan","documented":true,"critical":true}
+    ],
+    "expected_decision_kind": "environment_confirmed",
+    "expected_reference": "resume_aware_replan",
+    "why": "The promoted loop survives across both lab and field environments."
+  },
+  {
+    "id": "mock_provider_blocked",
+    "suite": "cross_provider_validation",
+    "current_reference": "mock",
+    "environment_snapshots": [
+      {"environment":"local_dev","decision_kind":"keep_promoted","reference":"mock","documented":true,"critical":false},
+      {"environment":"hardware_lab","decision_kind":"rollback_reference","reference":"mock","documented":true,"critical":true},
+      {"environment":"field_trial","decision_kind":"rollback_reference","reference":"mock","documented":true,"critical":true}
+    ],
+    "expected_decision_kind": "environment_blocked",
+    "expected_reference": null,
+    "why": "Critical deployment environments reject the promoted provider behavior."
+  },
+  {
+    "id": "failure_aware_merge_gap",
+    "suite": "backend_observation_fusion",
+    "current_reference": "failure_aware_merge",
+    "environment_snapshots": [
+      {"environment":"ci","decision_kind":"keep_promoted","reference":"failure_aware_merge","documented":true,"critical":true},
+      {"environment":"hardware_lab","decision_kind":"replace_reference","reference":"confidence_weighted","documented":false,"critical":true},
+      {"environment":"field_trial","decision_kind":"keep_promoted","reference":"failure_aware_merge","documented":true,"critical":false}
+    ],
+    "expected_decision_kind": "environment_gap",
+    "expected_reference": null,
+    "why": "Critical environment replacement without documentation leaves the rollout lineage incomplete."
+  }
+]

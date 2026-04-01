@@ -1,0 +1,25 @@
+name: recover_grasp
+description: recover from a failed grasp by returning to pre-grasp pose and verifying the target
+resume_original_instruction: true
+recovery_for:
+  - failed_steps:
+      - grasp
+    tools:
+      - motor_control
+steps:
+  - name: move_to_pre_grasp
+    tool: simulator
+    input:
+      action: move_to
+      pose: table/front_left/pre_grasp
+    expect:
+      accepted: true
+      state:
+        last_pose: "$input.pose"
+  - name: verify_target_after_grasp_failure
+    tool: sensor
+    input:
+      target: red_cube
+    expect:
+      detected: true
+      target: "$input.target"

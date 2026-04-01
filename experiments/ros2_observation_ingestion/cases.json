@@ -1,0 +1,327 @@
+[
+  {
+    "id": "detect_failure_snapshot",
+    "events": [
+      {
+        "topic": "/roboclaw/action",
+        "payload": {
+          "event": "skill_selected",
+          "skill": "pick_and_place",
+          "data": {
+            "execution_attempt": 1,
+            "replan_count": 0
+          }
+        }
+      },
+      {
+        "topic": "/roboclaw/action",
+        "payload": {
+          "event": "step_failed",
+          "skill": "pick_and_place",
+          "step": "detect_object",
+          "tool": "sensor"
+        }
+      },
+      {
+        "topic": "/roboclaw/state",
+        "payload": {
+          "backend": "gazebo",
+          "last_action": "move_to",
+          "last_pose": "home",
+          "held_object": null,
+          "active_skill": "pick_and_place",
+          "next_action": "replan_after_detect_object",
+          "steps_executed": 1,
+          "completed": false,
+          "failed_step": "detect_object"
+        }
+      },
+      {
+        "topic": "/cmd_vel",
+        "payload": {
+          "linear": 0.0,
+          "angular": 0.0,
+          "source": "gazebo"
+        }
+      }
+    ],
+    "expected_active_skill": "pick_and_place",
+    "expected_last_pose": "home",
+    "expected_held_object": null,
+    "expected_failed_step": "detect_object",
+    "expected_resume_step": null,
+    "expected_motion_state": "idle",
+    "why": "A basic failed-detection snapshot should preserve state-derived pose and the failed step."
+  },
+  {
+    "id": "grasp_recovery_started",
+    "events": [
+      {
+        "topic": "/roboclaw/action",
+        "payload": {
+          "event": "step_failed",
+          "skill": "pick_and_place",
+          "step": "grasp",
+          "tool": "motor_control"
+        }
+      },
+      {
+        "topic": "/roboclaw/state",
+        "payload": {
+          "backend": "gazebo",
+          "last_action": "move_to",
+          "last_pose": "table/front_left/pre_grasp",
+          "held_object": null,
+          "active_skill": "pick_and_place",
+          "completed": false,
+          "failed_step": "grasp"
+        }
+      },
+      {
+        "topic": "/roboclaw/action",
+        "payload": {
+          "event": "execution_replan_requested",
+          "skill": "pick_and_place",
+          "step": "grasp",
+          "data": {
+            "resume_from_step": "move_to_object",
+            "suggested_recovery_skills": ["recover_grasp"]
+          }
+        }
+      },
+      {
+        "topic": "/roboclaw/action",
+        "payload": {
+          "event": "skill_selected",
+          "skill": "recover_grasp",
+          "data": {
+            "execution_attempt": 2,
+            "replan_count": 1
+          }
+        }
+      }
+    ],
+    "expected_active_skill": "recover_grasp",
+    "expected_last_pose": "table/front_left/pre_grasp",
+    "expected_held_object": null,
+    "expected_failed_step": "grasp",
+    "expected_resume_step": "move_to_object",
+    "expected_motion_state": "unknown",
+    "why": "When recovery starts, ingestion should keep the failed step and checkpoint resume target together."
+  },
+  {
+    "id": "resume_after_recovery",
+    "events": [
+      {
+        "topic": "/roboclaw/action",
+        "payload": {
+          "event": "recovery_completed",
+          "skill": "recover_grasp",
+          "data": {
+            "resume_from_step": "move_to_object"
+          }
+        }
+      },
+      {
+        "topic": "/roboclaw/action",
+        "payload": {
+          "event": "skill_selected",
+          "skill": "pick_and_place",
+          "data": {
+            "execution_attempt": 3,
+            "replan_count": 1,
+            "resumed_from_step": "move_to_object"
+          }
+        }
+      },
+      {
+        "topic": "/roboclaw/action",
+        "payload": {
+          "event": "backend_command_accepted",
+          "backend": "gazebo",
+          "action": "move_to"
+        }
+      },
+      {
+        "topic": "/roboclaw/state",
+        "payload": {
+          "backend": "gazebo",
+          "last_action": "move_to",
+          "last_pose": "table/front_left/pre_grasp",
+          "held_object": null,
+          "active_skill": "pick_and_place",
+          "completed": false,
+          "failed_step": null
+        }
+      },
+      {
+        "topic": "/cmd_vel",
+        "payload": {
+          "linear": 0.25,
+          "angular": 0.0,
+          "source": "gazebo"
+        }
+      }
+    ],
+    "expected_active_skill": "pick_and_place",
+    "expected_last_pose": "table/front_left/pre_grasp",
+    "expected_held_object": null,
+    "expected_failed_step": null,
+    "expected_resume_step": "move_to_object",
+    "expected_motion_state": "moving",
+    "why": "After recovery the reducer should preserve the resume target even if a later backend event has no skill context."
+  },
+  {
+    "id": "wave_motion_only",
+    "events": [
+      {
+        "topic": "/roboclaw/action",
+        "payload": {
+          "event": "skill_selected",
+          "skill": "wave_arm",
+          "data": {
+            "execution_attempt": 1
+          }
+        }
+      },
+      {
+        "topic": "/roboclaw/action",
+        "payload": {
+          "event": "backend_command_accepted",
+          "backend": "gazebo",
+          "action": "move_to"
+        }
+      },
+      {
+        "topic": "/joint_states",
+        "payload": {
+          "joint_names": ["arm_lift", "wrist_roll", "gripper"],
+          "positions": [0.9, 0.45, 1.0]
+        }
+      },
+      {
+        "topic": "/cmd_vel",
+        "payload": {
+          "linear": 0.05,
+          "angular": 0.4,
+          "source": "gazebo"
+        }
+      }
+    ],
+    "expected_active_skill": "wave_arm",
+    "expected_last_pose": "gesture/wave_peak",
+    "expected_held_object": null,
+    "expected_failed_step": null,
+    "expected_resume_step": null,
+    "expected_motion_state": "moving",
+    "why": "Pure motion telemetry may have no state message, so ingestion should still infer pose and movement."
+  },
+  {
+    "id": "place_failure_still_holding",
+    "events": [
+      {
+        "topic": "/roboclaw/action",
+        "payload": {
+          "event": "skill_selected",
+          "skill": "pick_and_place"
+        }
+      },
+      {
+        "topic": "/roboclaw/action",
+        "payload": {
+          "event": "step_failed",
+          "skill": "pick_and_place",
+          "step": "place_object",
+          "tool": "simulator"
+        }
+      },
+      {
+        "topic": "/roboclaw/state",
+        "payload": {
+          "backend": "gazebo",
+          "last_action": "place",
+          "last_pose": "bin_a",
+          "held_object": "red_cube",
+          "active_skill": "pick_and_place",
+          "completed": false,
+          "failed_step": "place_object"
+        }
+      },
+      {
+        "topic": "/roboclaw/action",
+        "payload": {
+          "event": "execution_replan_requested",
+          "skill": "pick_and_place",
+          "step": "place_object",
+          "data": {
+            "resume_from_step": "place_object"
+          }
+        }
+      },
+      {
+        "topic": "/cmd_vel",
+        "payload": {
+          "linear": 0.0,
+          "angular": 0.0,
+          "source": "gazebo"
+        }
+      }
+    ],
+    "expected_active_skill": "pick_and_place",
+    "expected_last_pose": "bin_a",
+    "expected_held_object": "red_cube",
+    "expected_failed_step": "place_object",
+    "expected_resume_step": "place_object",
+    "expected_motion_state": "idle",
+    "why": "A placement failure should preserve the held-object fact together with the placement checkpoint."
+  },
+  {
+    "id": "stale_state_then_wave",
+    "events": [
+      {
+        "topic": "/roboclaw/state",
+        "payload": {
+          "backend": "gazebo",
+          "last_action": "move_to",
+          "last_pose": "home",
+          "held_object": null,
+          "active_skill": "pick_and_place",
+          "completed": false,
+          "failed_step": "detect_object"
+        }
+      },
+      {
+        "topic": "/roboclaw/action",
+        "payload": {
+          "event": "skill_selected",
+          "skill": "wave_arm",
+          "data": {
+            "execution_attempt": 2
+          }
+        }
+      },
+      {
+        "topic": "/joint_states",
+        "payload": {
+          "joint_names": ["arm_lift", "wrist_roll", "gripper"],
+          "positions": [0.8, -0.4, 1.0]
+        }
+      },
+      {
+        "topic": "/cmd_vel",
+        "payload": {
+          "linear": 0.05,
+          "angular": 0.4,
+          "source": "gazebo"
+        }
+      }
+    ],
+    "expected_active_skill": "wave_arm",
+    "expected_last_pose": "gesture/wave_start",
+    "expected_held_object": null,
+    "expected_failed_step": null,
+    "expected_resume_step": null,
+    "expected_motion_state": "moving",
+    "why": "A new skill selection should clear stale failure state and allow joint telemetry to override old pose snapshots."
+  }
+]

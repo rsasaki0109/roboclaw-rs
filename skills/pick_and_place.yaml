@@ -1,0 +1,46 @@
+name: pick_and_place
+description: pick up an object in simulation and place it into a bin
+supports_checkpoint_resume: true
+steps:
+  - name: detect_object
+    tool: sensor
+    max_retries: 1
+    resume_from_step: detect_object
+    input:
+      target: red_cube
+    expect:
+      detected: true
+      target: "$input.target"
+  - name: move_to_object
+    tool: simulator
+    resume_from_step: move_to_object
+    input:
+      action: move_to
+      pose: table/front_left/pre_grasp
+    expect:
+      accepted: true
+      state:
+        last_pose: "$input.pose"
+  - name: grasp
+    tool: motor_control
+    max_retries: 1
+    resume_from_step: move_to_object
+    input:
+      action: grasp
+      target: red_cube
+    expect:
+      accepted: true
+      state:
+        held_object: "$input.target"
+  - name: place_object
+    tool: simulator
+    resume_from_step: place_object
+    input:
+      action: place
+      target: red_cube
+      location: bin_a
+    expect:
+      accepted: true
+      state:
+        held_object: null
+        last_pose: "$input.location"

@@ -1,0 +1,206 @@
+[
+  {
+    "id": "single_pending_cut_stays_pending",
+    "suite": "planner_selection",
+    "current_reference": "catalog_score",
+    "release_trains": [
+      {
+        "train": "2026.q1",
+        "signals": [
+          {"surface":"package_registry","decision_kind":"keep_promoted","reference":"catalog_score","confidence":0.84,"lag_hours":10,"allowed_lag_hours":24},
+          {"surface":"release_feed","decision_kind":"keep_promoted","reference":"catalog_score","confidence":0.90,"lag_hours":2,"allowed_lag_hours":6},
+          {"surface":"docs_portal","decision_kind":"keep_promoted","reference":"catalog_score","confidence":0.89,"lag_hours":4,"allowed_lag_hours":12}
+        ]
+      },
+      {
+        "train": "2026.q2",
+        "signals": [
+          {"surface":"package_registry","decision_kind":"keep_promoted","reference":"catalog_score","confidence":0.84,"lag_hours":18,"allowed_lag_hours":24},
+          {"surface":"docs_portal","decision_kind":"replace_reference","reference":"pipeline_router","confidence":0.93,"lag_hours":3,"allowed_lag_hours":12}
+        ]
+      }
+    ],
+    "expected_decision_kind": "carryover_pending",
+    "expected_reference": null,
+    "why": "A single pending cut should not spend cross-train lag debt yet."
+  },
+  {
+    "id": "same_challenger_two_cuts_supersedes",
+    "suite": "planner_selection",
+    "current_reference": "catalog_score",
+    "release_trains": [
+      {
+        "train": "2026.q1",
+        "signals": [
+          {"surface":"package_registry","decision_kind":"keep_promoted","reference":"catalog_score","confidence":0.84,"lag_hours":18,"allowed_lag_hours":24},
+          {"surface":"docs_portal","decision_kind":"replace_reference","reference":"pipeline_router","confidence":0.92,"lag_hours":3,"allowed_lag_hours":12}
+        ]
+      },
+      {
+        "train": "2026.q2",
+        "signals": [
+          {"surface":"package_registry","decision_kind":"keep_promoted","reference":"catalog_score","confidence":0.84,"lag_hours":30,"allowed_lag_hours":24},
+          {"surface":"release_feed","decision_kind":"replace_reference","reference":"pipeline_router","confidence":0.93,"lag_hours":2,"allowed_lag_hours":6}
+        ]
+      }
+    ],
+    "expected_decision_kind": "carryover_superseded",
+    "expected_reference": "pipeline_router",
+    "why": "The same challenger surviving across consecutive pending cuts should spend the carryover budget."
+  },
+  {
+    "id": "mixed_challenger_chain_blocks",
+    "suite": "planner_prompt_shaping",
+    "current_reference": "prompt_constrained",
+    "release_trains": [
+      {
+        "train": "2026.q1",
+        "signals": [
+          {"surface":"package_registry","decision_kind":"keep_promoted","reference":"prompt_constrained","confidence":0.83,"lag_hours":18,"allowed_lag_hours":24},
+          {"surface":"docs_portal","decision_kind":"replace_reference","reference":"schema_constrained","confidence":0.92,"lag_hours":3,"allowed_lag_hours":12}
+        ]
+      },
+      {
+        "train": "2026.q2",
+        "signals": [
+          {"surface":"package_registry","decision_kind":"keep_promoted","reference":"prompt_constrained","confidence":0.84,"lag_hours":31,"allowed_lag_hours":24},
+          {"surface":"release_feed","decision_kind":"replace_reference","reference":"mirrored_constraints","confidence":0.94,"lag_hours":2,"allowed_lag_hours":6}
+        ]
+      }
+    ],
+    "expected_decision_kind": "carryover_blocked",
+    "expected_reference": null,
+    "why": "Carryover debt should block when consecutive pending cuts point to different challengers."
+  },
+  {
+    "id": "confirmed_train_clears_old_pending",
+    "suite": "gateway_replanning",
+    "current_reference": "resume_aware_replan",
+    "release_trains": [
+      {
+        "train": "2026.q1",
+        "signals": [
+          {"surface":"package_registry","decision_kind":"keep_promoted","reference":"resume_aware_replan","confidence":0.84,"lag_hours":17,"allowed_lag_hours":24},
+          {"surface":"docs_portal","decision_kind":"replace_reference","reference":"current_gateway_clone","confidence":0.91,"lag_hours":4,"allowed_lag_hours":12}
+        ]
+      },
+      {
+        "train": "2026.q2",
+        "signals": [
+          {"surface":"package_registry","decision_kind":"keep_promoted","reference":"resume_aware_replan","confidence":0.87,"lag_hours":16,"allowed_lag_hours":24},
+          {"surface":"release_feed","decision_kind":"keep_promoted","reference":"resume_aware_replan","confidence":0.92,"lag_hours":2,"allowed_lag_hours":6},
+          {"surface":"docs_portal","decision_kind":"keep_promoted","reference":"resume_aware_replan","confidence":0.90,"lag_hours":5,"allowed_lag_hours":12}
+        ]
+      }
+    ],
+    "expected_decision_kind": "carryover_confirmed",
+    "expected_reference": "resume_aware_replan",
+    "why": "A later confirmed train should clear carryover debt from older pending cuts."
+  },
+  {
+    "id": "latest_rollback_blocks_chain",
+    "suite": "tool_output_validation",
+    "current_reference": "tolerant_contract",
+    "release_trains": [
+      {
+        "train": "2026.q1",
+        "signals": [
+          {"surface":"package_registry","decision_kind":"keep_promoted","reference":"tolerant_contract","confidence":0.84,"lag_hours":18,"allowed_lag_hours":24},
+          {"surface":"docs_portal","decision_kind":"replace_reference","reference":"normalized_scalars","confidence":0.90,"lag_hours":3,"allowed_lag_hours":12}
+        ]
+      },
+      {
+        "train": "2026.q2",
+        "signals": [
+          {"surface":"release_feed","decision_kind":"rollback_reference","reference":"tolerant_contract","confidence":0.96,"lag_hours":2,"allowed_lag_hours":6},
+          {"surface":"package_registry","decision_kind":"keep_promoted","reference":"tolerant_contract","confidence":0.85,"lag_hours":18,"allowed_lag_hours":24}
+        ]
+      }
+    ],
+    "expected_decision_kind": "carryover_blocked",
+    "expected_reference": null,
+    "why": "A rollback in the latest cut should block regardless of older pending history."
+  },
+  {
+    "id": "intervening_confirmed_resets_carryover",
+    "suite": "promotion_provenance",
+    "current_reference": "documented_chain",
+    "release_trains": [
+      {
+        "train": "2026.q1",
+        "signals": [
+          {"surface":"package_registry","decision_kind":"keep_promoted","reference":"documented_chain","confidence":0.83,"lag_hours":18,"allowed_lag_hours":24},
+          {"surface":"docs_portal","decision_kind":"replace_reference","reference":"lineage_budget","confidence":0.94,"lag_hours":3,"allowed_lag_hours":12}
+        ]
+      },
+      {
+        "train": "2026.q2",
+        "signals": [
+          {"surface":"package_registry","decision_kind":"keep_promoted","reference":"documented_chain","confidence":0.86,"lag_hours":15,"allowed_lag_hours":24},
+          {"surface":"release_feed","decision_kind":"keep_promoted","reference":"documented_chain","confidence":0.91,"lag_hours":2,"allowed_lag_hours":6},
+          {"surface":"docs_portal","decision_kind":"keep_promoted","reference":"documented_chain","confidence":0.90,"lag_hours":5,"allowed_lag_hours":12}
+        ]
+      },
+      {
+        "train": "2026.q3",
+        "signals": [
+          {"surface":"package_registry","decision_kind":"keep_promoted","reference":"documented_chain","confidence":0.84,"lag_hours":17,"allowed_lag_hours":24},
+          {"surface":"docs_portal","decision_kind":"replace_reference","reference":"lineage_budget","confidence":0.95,"lag_hours":3,"allowed_lag_hours":12}
+        ]
+      }
+    ],
+    "expected_decision_kind": "carryover_pending",
+    "expected_reference": null,
+    "why": "A confirmed cut in the middle should reset carryover debt instead of chaining old pending lag forever."
+  },
+  {
+    "id": "docs_only_repeated_pending_stays_pending",
+    "suite": "promotion_environment_provenance",
+    "current_reference": "environment_lineage_budget",
+    "release_trains": [
+      {
+        "train": "2026.q1",
+        "signals": [
+          {"surface":"package_registry","decision_kind":"keep_promoted","reference":"environment_lineage_budget","confidence":0.84,"lag_hours":18,"allowed_lag_hours":24},
+          {"surface":"docs_portal","decision_kind":"replace_reference","reference":"documented_majority","confidence":0.92,"lag_hours":4,"allowed_lag_hours":12}
+        ]
+      },
+      {
+        "train": "2026.q2",
+        "signals": [
+          {"surface":"package_registry","decision_kind":"keep_promoted","reference":"environment_lineage_budget","confidence":0.84,"lag_hours":18,"allowed_lag_hours":24},
+          {"surface":"docs_portal","decision_kind":"replace_reference","reference":"documented_majority","confidence":0.93,"lag_hours":4,"allowed_lag_hours":12}
+        ]
+      }
+    ],
+    "expected_decision_kind": "carryover_pending",
+    "expected_reference": null,
+    "why": "Repeated docs-only drift should still stay pending until critical surfaces join or the lag debt truly expires."
+  },
+  {
+    "id": "latest_decisive_supersede_without_carryover",
+    "suite": "cross_provider_validation",
+    "current_reference": "mock",
+    "release_trains": [
+      {
+        "train": "2026.q1",
+        "signals": [
+          {"surface":"package_registry","decision_kind":"keep_promoted","reference":"mock","confidence":0.82,"lag_hours":16,"allowed_lag_hours":24},
+          {"surface":"release_feed","decision_kind":"keep_promoted","reference":"mock","confidence":0.87,"lag_hours":2,"allowed_lag_hours":6},
+          {"surface":"docs_portal","decision_kind":"keep_promoted","reference":"mock","confidence":0.89,"lag_hours":4,"allowed_lag_hours":12}
+        ]
+      },
+      {
+        "train": "2026.q2",
+        "signals": [
+          {"surface":"package_registry","decision_kind":"replace_reference","reference":"local","confidence":0.90,"lag_hours":18,"allowed_lag_hours":24},
+          {"surface":"release_feed","decision_kind":"replace_reference","reference":"local","confidence":0.95,"lag_hours":1,"allowed_lag_hours":6},
+          {"surface":"docs_portal","decision_kind":"keep_promoted","reference":"mock","confidence":0.90,"lag_hours":4,"allowed_lag_hours":12}
+        ]
+      }
+    ],
+    "expected_decision_kind": "carryover_superseded",
+    "expected_reference": "local",
+    "why": "A latest train with a decisive critical-surface challenger should supersede even without older carryover debt."
+  }
+]

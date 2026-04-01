@@ -1,0 +1,89 @@
+[
+  {
+    "id": "prompt_constrained_stable",
+    "suite": "planner_prompt_shaping",
+    "frontier_candidate": "prompt_constrained",
+    "rival_candidate": "schema_constrained",
+    "snapshots": [
+      {"provider":"mock","model":"builtin","days_ago":1,"frontier_accuracy":100.0,"rival_accuracy":66.7,"comparable":true},
+      {"provider":"local","model":"llama3.2:1b","days_ago":2,"frontier_accuracy":100.0,"rival_accuracy":66.7,"comparable":true},
+      {"provider":"openai","model":"gpt-5-mini","days_ago":5,"frontier_accuracy":100.0,"rival_accuracy":83.3,"comparable":true},
+      {"provider":"claude","model":"claude-sonnet-4-6","days_ago":6,"frontier_accuracy":83.3,"rival_accuracy":66.7,"comparable":true}
+    ],
+    "expected_decision_kind": "promote_reference",
+    "expected_reference": "prompt_constrained",
+    "why": "The provisional reference stays ahead across multiple providers and recent snapshots."
+  },
+  {
+    "id": "planner_split_hold",
+    "suite": "planner_selection",
+    "frontier_candidate": "catalog_score",
+    "rival_candidate": "pipeline_router",
+    "snapshots": [
+      {"provider":"mock","model":"builtin","days_ago":1,"frontier_accuracy":100.0,"rival_accuracy":100.0,"comparable":true},
+      {"provider":"local","model":"llama3.2:1b","days_ago":2,"frontier_accuracy":87.5,"rival_accuracy":100.0,"comparable":true},
+      {"provider":"openai","model":"gpt-5-mini","days_ago":5,"frontier_accuracy":100.0,"rival_accuracy":100.0,"comparable":true},
+      {"provider":"claude","model":"claude-sonnet-4-6","days_ago":8,"frontier_accuracy":83.3,"rival_accuracy":100.0,"comparable":true}
+    ],
+    "expected_decision_kind": "hold_experimental",
+    "expected_reference": null,
+    "why": "The frontier is split across providers and ties are common, so replay should not promote."
+  },
+  {
+    "id": "pipeline_router_takeover",
+    "suite": "planner_selection",
+    "frontier_candidate": "catalog_score",
+    "rival_candidate": "pipeline_router",
+    "snapshots": [
+      {"provider":"mock","model":"builtin","days_ago":10,"frontier_accuracy":100.0,"rival_accuracy":100.0,"comparable":true},
+      {"provider":"local","model":"llama3.2:3b","days_ago":1,"frontier_accuracy":75.0,"rival_accuracy":100.0,"comparable":true},
+      {"provider":"openai","model":"gpt-5-mini","days_ago":2,"frontier_accuracy":87.5,"rival_accuracy":100.0,"comparable":true},
+      {"provider":"claude","model":"claude-sonnet-4-6","days_ago":3,"frontier_accuracy":83.3,"rival_accuracy":100.0,"comparable":true}
+    ],
+    "expected_decision_kind": "switch_reference",
+    "expected_reference": "pipeline_router",
+    "why": "Newer provider snapshots consistently favor the rival candidate."
+  },
+  {
+    "id": "mock_only_not_enough",
+    "suite": "cross_provider_validation",
+    "frontier_candidate": "mock",
+    "rival_candidate": "local",
+    "snapshots": [
+      {"provider":"mock","model":"builtin","days_ago":0,"frontier_accuracy":83.3,"rival_accuracy":0.0,"comparable":true},
+      {"provider":"local","model":"llama3.2:1b","days_ago":0,"frontier_accuracy":0.0,"rival_accuracy":0.0,"comparable":false}
+    ],
+    "expected_decision_kind": "hold_experimental",
+    "expected_reference": null,
+    "why": "A single mock snapshot is not enough evidence to promote a frontier for provider validation."
+  },
+  {
+    "id": "frontier_recovered_after_regression",
+    "suite": "planner_prompt_shaping",
+    "frontier_candidate": "prompt_constrained",
+    "rival_candidate": "mirrored_constraints",
+    "snapshots": [
+      {"provider":"mock","model":"builtin","days_ago":12,"frontier_accuracy":66.7,"rival_accuracy":83.3,"comparable":true},
+      {"provider":"local","model":"llama3.2:1b","days_ago":2,"frontier_accuracy":100.0,"rival_accuracy":66.7,"comparable":true},
+      {"provider":"openai","model":"gpt-5-mini","days_ago":3,"frontier_accuracy":100.0,"rival_accuracy":66.7,"comparable":true},
+      {"provider":"claude","model":"claude-sonnet-4-6","days_ago":4,"frontier_accuracy":83.3,"rival_accuracy":66.7,"comparable":true}
+    ],
+    "expected_decision_kind": "promote_reference",
+    "expected_reference": "prompt_constrained",
+    "why": "Recent multi-provider evidence outweighs an older regression."
+  },
+  {
+    "id": "noise_tie_hold",
+    "suite": "tool_output_validation",
+    "frontier_candidate": "tolerant_contract",
+    "rival_candidate": "normalized_scalars",
+    "snapshots": [
+      {"provider":"mock","model":"builtin","days_ago":1,"frontier_accuracy":87.5,"rival_accuracy":87.5,"comparable":true},
+      {"provider":"local","model":"llama3.2:1b","days_ago":2,"frontier_accuracy":75.0,"rival_accuracy":75.0,"comparable":true},
+      {"provider":"openai","model":"gpt-5-mini","days_ago":3,"frontier_accuracy":87.5,"rival_accuracy":83.3,"comparable":true}
+    ],
+    "expected_decision_kind": "hold_experimental",
+    "expected_reference": null,
+    "why": "When replay evidence is mostly ties and tiny margins, promotion should wait for more snapshots."
+  }
+]

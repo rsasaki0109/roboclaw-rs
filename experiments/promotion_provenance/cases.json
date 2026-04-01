@@ -1,0 +1,93 @@
+[
+  {
+    "id": "declared_checkpoint_continuous",
+    "suite": "resume_policy",
+    "current_reference": "declared_checkpoint",
+    "release_cuts": [
+      {"tag":"v0.2.0","decision_kind":"promote_reference","reference":"declared_checkpoint","documented":true},
+      {"tag":"v0.3.0","decision_kind":"keep_promoted","reference":"declared_checkpoint","documented":true},
+      {"tag":"v0.4.0","decision_kind":"keep_promoted","reference":"declared_checkpoint","documented":true}
+    ],
+    "expected_decision_kind": "provenance_confirmed",
+    "expected_reference": "declared_checkpoint",
+    "why": "The same promoted surface is documented continuously across release cuts."
+  },
+  {
+    "id": "pipeline_router_superseded_chain",
+    "suite": "planner_selection",
+    "current_reference": "pipeline_router",
+    "release_cuts": [
+      {"tag":"v0.2.0","decision_kind":"promote_reference","reference":"catalog_score","documented":true},
+      {"tag":"v0.3.0","decision_kind":"replace_reference","reference":"pipeline_router","documented":true},
+      {"tag":"v0.4.0","decision_kind":"keep_promoted","reference":"pipeline_router","documented":true}
+    ],
+    "expected_decision_kind": "provenance_superseded",
+    "expected_reference": "pipeline_router",
+    "why": "The current promoted surface replaced an older one through an explicitly documented chain."
+  },
+  {
+    "id": "prompt_history_gap",
+    "suite": "planner_prompt_shaping",
+    "current_reference": "prompt_constrained",
+    "release_cuts": [
+      {"tag":"v0.2.0","decision_kind":"promote_reference","reference":"prompt_constrained","documented":true},
+      {"tag":"v0.3.0","decision_kind":"keep_promoted","reference":"prompt_constrained","documented":false},
+      {"tag":"v0.4.0","decision_kind":"keep_promoted","reference":"prompt_constrained","documented":true}
+    ],
+    "expected_decision_kind": "provenance_gap",
+    "expected_reference": null,
+    "why": "One release cut omitted provenance, so the current stable story needs backfill."
+  },
+  {
+    "id": "tolerant_contract_broken",
+    "suite": "tool_output_validation",
+    "current_reference": "tolerant_contract",
+    "release_cuts": [
+      {"tag":"v0.2.0","decision_kind":"promote_reference","reference":"tolerant_contract","documented":true},
+      {"tag":"v0.3.0","decision_kind":"keep_promoted","reference":"tolerant_contract","documented":true},
+      {"tag":"v0.4.0","decision_kind":"rollback_reference","reference":"tolerant_contract","documented":true}
+    ],
+    "expected_decision_kind": "provenance_broken",
+    "expected_reference": null,
+    "why": "A rollback breaks the current provenance chain even if older cuts were documented."
+  },
+  {
+    "id": "stream_reducer_pending_gap",
+    "suite": "ros2_observation_ingestion",
+    "current_reference": "stream_reducer",
+    "release_cuts": [
+      {"tag":"v0.2.0","decision_kind":"promote_reference","reference":"stream_reducer","documented":true},
+      {"tag":"v0.3.0","decision_kind":"defer_rollback","reference":"stream_reducer","documented":false},
+      {"tag":"v0.4.0","decision_kind":"keep_promoted","reference":"stream_reducer","documented":true}
+    ],
+    "expected_decision_kind": "provenance_gap",
+    "expected_reference": null,
+    "why": "A deferred cut without provenance note leaves the release history incomplete."
+  },
+  {
+    "id": "resume_aware_replan_replace_gap",
+    "suite": "gateway_replanning",
+    "current_reference": "resume_aware_replan",
+    "release_cuts": [
+      {"tag":"v0.2.0","decision_kind":"promote_reference","reference":"current_gateway_clone","documented":true},
+      {"tag":"v0.3.0","decision_kind":"replace_reference","reference":"resume_aware_replan","documented":false},
+      {"tag":"v0.4.0","decision_kind":"keep_promoted","reference":"resume_aware_replan","documented":true}
+    ],
+    "expected_decision_kind": "provenance_gap",
+    "expected_reference": null,
+    "why": "The replacement happened, but the release cut that did it did not carry provenance."
+  },
+  {
+    "id": "mock_provider_broken_after_replace",
+    "suite": "cross_provider_validation",
+    "current_reference": "local",
+    "release_cuts": [
+      {"tag":"v0.2.0","decision_kind":"promote_reference","reference":"mock","documented":true},
+      {"tag":"v0.3.0","decision_kind":"replace_reference","reference":"local","documented":true},
+      {"tag":"v0.4.0","decision_kind":"rollback_reference","reference":"local","documented":true}
+    ],
+    "expected_decision_kind": "provenance_broken",
+    "expected_reference": null,
+    "why": "A documented replacement chain still ends broken if the current surface is rolled back."
+  }
+]

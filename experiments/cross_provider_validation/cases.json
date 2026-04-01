@@ -1,0 +1,38 @@
+[
+  {
+    "id": "pick_basic",
+    "instruction": "Use the simulator to pick up the red cube and place it in bin_a.",
+    "expected_skill": "pick_and_place",
+    "why": "Baseline transport task for every provider."
+  },
+  {
+    "id": "wave_basic",
+    "instruction": "Wave to acknowledge the operator.",
+    "expected_skill": "wave_arm",
+    "why": "Simple non-recovery gesture instruction."
+  },
+  {
+    "id": "recover_grasp",
+    "instruction": "Original instruction:\nUse the simulator to pick up the red cube and place it in bin_a.\n\nPrevious execution failed.\nFailed step: grasp\nFailed tool: motor_control\nObservation: transient motor stall\nSuggested recovery skills: recover_grasp",
+    "expected_skill": "recover_grasp",
+    "why": "Canonical grasp recovery turn."
+  },
+  {
+    "id": "recover_observation",
+    "instruction": "Original instruction:\nUse the simulator to pick up the red cube and place it in bin_a.\n\nPrevious execution failed.\nFailed step: detect_object\nFailed tool: sensor\nObservation: target not detected\nSuggested recovery skills: recover_observation",
+    "expected_skill": "recover_observation",
+    "why": "Canonical observation recovery turn."
+  },
+  {
+    "id": "recover_compact_goal",
+    "instruction": "Original instruction:\nContinue the previous task.\n\nPrevious execution failed.\nFailed step: grasp\nFailed tool: motor_control\nObservation: grasp failed but the task is still pending\nSuggested recovery skills: recover_grasp",
+    "expected_skill": "recover_grasp",
+    "why": "Compact user goals stress provider reliance on recovery context instead of task wording."
+  },
+  {
+    "id": "wave_motion_interrupt",
+    "instruction": "Original instruction:\nWave to acknowledge the operator.\n\nPrevious execution failed.\nFailed step: move_to_wave_peak\nFailed tool: simulator\nObservation: motion interrupted before reaching the wave pose\nSuggested recovery skills: none",
+    "expected_skill": "wave_arm",
+    "why": "If no recovery skill matches, providers should still be free to return the task skill."
+  }
+]

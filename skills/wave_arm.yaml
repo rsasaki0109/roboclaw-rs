@@ -1,0 +1,34 @@
+name: wave_arm
+description: wave the robot arm to acknowledge or greet
+supports_checkpoint_resume: true
+steps:
+  - name: move_to_wave_start
+    tool: simulator
+    resume_from_step: move_to_wave_start
+    input:
+      action: move_to
+      pose: gesture/wave_start
+    expect:
+      accepted: true
+      state:
+        last_pose: "$input.pose"
+  - name: move_to_wave_peak
+    tool: simulator
+    resume_from_step: move_to_wave_peak
+    input:
+      action: move_to
+      pose: gesture/wave_peak
+    expect:
+      accepted: true
+      state:
+        last_pose: "$input.pose"
+  - name: return_home
+    tool: simulator
+    resume_from_step: return_home
+    input:
+      action: move_to
+      pose: home
+    expect:
+      accepted: true
+      state:
+        last_pose: "$input.pose"

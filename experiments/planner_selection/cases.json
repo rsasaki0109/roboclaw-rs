@@ -1,0 +1,50 @@
+[
+  {
+    "id": "pick-basic",
+    "instruction": "Use the simulator to pick up the red cube and place it in bin_a.",
+    "expected_skill": "pick_and_place",
+    "why": "Baseline pick and place flow."
+  },
+  {
+    "id": "pick-compact",
+    "instruction": "Pick and place the red cube into bin_a.",
+    "expected_skill": "pick_and_place",
+    "why": "Short phrasing should still select the transport skill."
+  },
+  {
+    "id": "wave-acknowledge",
+    "instruction": "Wave to acknowledge the operator.",
+    "expected_skill": "wave_arm",
+    "why": "Canonical greeting request."
+  },
+  {
+    "id": "wave-salute",
+    "instruction": "Salute the operator with the arm.",
+    "expected_skill": "wave_arm",
+    "why": "Tests phrasing beyond the obvious wave keyword."
+  },
+  {
+    "id": "wave-gesture",
+    "instruction": "Use an arm gesture to say hello to the operator.",
+    "expected_skill": "wave_arm",
+    "why": "Tests whether variants generalize gesture language."
+  },
+  {
+    "id": "transport-phrasing",
+    "instruction": "Use the simulator to transport the cube into bin_a after grasping it.",
+    "expected_skill": "pick_and_place",
+    "why": "Tests transport phrasing without explicit pick/place keywords."
+  },
+  {
+    "id": "recover-grasp",
+    "instruction": "Original instruction:\nUse the simulator to pick up the red cube and place it in bin_a.\n\nPrevious execution failed.\nFailed step: grasp\nFailed tool: motor_control\nObservation: transient motor stall\nSuggested recovery skills: recover_grasp",
+    "expected_skill": "recover_grasp",
+    "why": "Canonical grasp recovery context."
+  },
+  {
+    "id": "recover-observation",
+    "instruction": "Original instruction:\nUse the simulator to pick up the red cube and place it in bin_a.\n\nPrevious execution failed.\nFailed step: detect_object\nFailed tool: sensor\nObservation: target not detected\nSuggested recovery skills: recover_observation",
+    "expected_skill": "recover_observation",
+    "why": "Canonical sensor recovery context."
+  }
+]

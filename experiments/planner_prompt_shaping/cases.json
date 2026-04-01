@@ -1,0 +1,56 @@
+[
+  {
+    "id": "pick_basic",
+    "user_goal": "Use the simulator to pick up the red cube and place it in bin_a.",
+    "failed_step": null,
+    "failed_tool": null,
+    "observation": null,
+    "expected_skill": "pick_and_place",
+    "why": "Baseline transport instruction should remain stable across all prompt shapes."
+  },
+  {
+    "id": "wave_basic",
+    "user_goal": "Wave to acknowledge the operator.",
+    "failed_step": null,
+    "failed_tool": null,
+    "observation": null,
+    "expected_skill": "wave_arm",
+    "why": "Simple greeting instructions should not require any recovery-specific scaffolding."
+  },
+  {
+    "id": "recover_grasp_transport",
+    "user_goal": "Use the simulator to pick up the red cube and place it in bin_a.",
+    "failed_step": "grasp",
+    "failed_tool": "motor_control",
+    "observation": "transient motor stall while closing the gripper",
+    "expected_skill": "recover_grasp",
+    "why": "Without explicit recovery constraints a planner can drift back to pick_and_place because the original task wording dominates."
+  },
+  {
+    "id": "recover_observation_transport",
+    "user_goal": "Use the simulator to pick up the red cube and place it in bin_a.",
+    "failed_step": "detect_object",
+    "failed_tool": "sensor",
+    "observation": "target not detected after rescan",
+    "expected_skill": "recover_observation",
+    "why": "Observation recovery should be selected even though the user goal still sounds like transport."
+  },
+  {
+    "id": "recover_grasp_compact_goal",
+    "user_goal": "Continue the previous task.",
+    "failed_step": "grasp",
+    "failed_tool": "motor_control",
+    "observation": "grasp failed but the task is still pending",
+    "expected_skill": "recover_grasp",
+    "why": "Compact goals depend heavily on prompt/schema constraints because the task text itself is underspecified."
+  },
+  {
+    "id": "wave_motion_interrupt",
+    "user_goal": "Wave to acknowledge the operator.",
+    "failed_step": "move_to_wave_peak",
+    "failed_tool": "simulator",
+    "observation": "motion interrupted before reaching the wave pose",
+    "expected_skill": "wave_arm",
+    "why": "If no matching recovery skill exists, constrained prompts should still permit the task skill instead of forcing a false recovery."
+  }
+]
