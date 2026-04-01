@@ -1,0 +1,13 @@
+[package]
+name = "roboclaw-agent"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+roboclaw_memory = { package = "roboclaw-memory", path = "../memory" }
+roboclaw_skills = { package = "roboclaw-skills", path = "../skills" }
+roboclaw_tools = { package = "roboclaw-tools", path = "../tools" }

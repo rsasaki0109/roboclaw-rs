@@ -1,0 +1,144 @@
+[
+  {
+    "id": "documented_chain_confirmed",
+    "suite": "resume_policy",
+    "current_reference": "declared_checkpoint",
+    "release_cuts": [
+      {"tag":"v0.1.0","decision_kind":"keep_promoted","reference":"declared_checkpoint","documented":true},
+      {"tag":"v0.2.0","decision_kind":"keep_promoted","reference":"declared_checkpoint","documented":true},
+      {"tag":"v0.3.0","decision_kind":"keep_promoted","reference":"declared_checkpoint","documented":true}
+    ],
+    "artifacts": [],
+    "expected_decision_kind": "backfill_confirmed",
+    "expected_reference": "declared_checkpoint",
+    "why": "No release gap exists, so backfill policy should simply preserve the current provenance chain."
+  },
+  {
+    "id": "single_gap_backfilled_from_changelog",
+    "suite": "resume_policy",
+    "current_reference": "declared_checkpoint",
+    "release_cuts": [
+      {"tag":"v0.1.0","decision_kind":"keep_promoted","reference":"declared_checkpoint","documented":true},
+      {"tag":"v0.2.0","decision_kind":"missing_provenance","reference":null,"documented":false},
+      {"tag":"v0.3.0","decision_kind":"keep_promoted","reference":"declared_checkpoint","documented":true}
+    ],
+    "artifacts": [
+      {"source":"changelog","tag":"v0.2.0","decision_kind":"keep_promoted","reference":"declared_checkpoint","confidence":0.92}
+    ],
+    "expected_decision_kind": "backfill_confirmed",
+    "expected_reference": "declared_checkpoint",
+    "why": "A single high-confidence changelog entry can repair a simple continuity gap."
+  },
+  {
+    "id": "replacement_gap_backfilled_from_dual_sources",
+    "suite": "planner_selection",
+    "current_reference": "pipeline_router",
+    "release_cuts": [
+      {"tag":"v0.4.0","decision_kind":"keep_promoted","reference":"catalog_score","documented":true},
+      {"tag":"v0.5.0","decision_kind":"missing_provenance","reference":null,"documented":false},
+      {"tag":"v0.6.0","decision_kind":"keep_promoted","reference":"pipeline_router","documented":true}
+    ],
+    "artifacts": [
+      {"source":"changelog","tag":"v0.5.0","decision_kind":"replace_reference","reference":"pipeline_router","confidence":0.94},
+      {"source":"release_notes","tag":"v0.5.0","decision_kind":"replace_reference","reference":"pipeline_router","confidence":0.91}
+    ],
+    "expected_decision_kind": "backfill_superseded",
+    "expected_reference": "pipeline_router",
+    "why": "Matching changelog and release-note artifacts should recover the missing replacement step."
+  },
+  {
+    "id": "conflicting_artifacts_rejected",
+    "suite": "planner_prompt_shaping",
+    "current_reference": "prompt_constrained",
+    "release_cuts": [
+      {"tag":"v0.7.0","decision_kind":"keep_promoted","reference":"prompt_constrained","documented":true},
+      {"tag":"v0.8.0","decision_kind":"missing_provenance","reference":null,"documented":false},
+      {"tag":"v0.9.0","decision_kind":"keep_promoted","reference":"prompt_constrained","documented":true}
+    ],
+    "artifacts": [
+      {"source":"changelog","tag":"v0.8.0","decision_kind":"keep_promoted","reference":"prompt_constrained","confidence":0.90},
+      {"source":"release_notes","tag":"v0.8.0","decision_kind":"rollback_reference","reference":"prompt_constrained","confidence":0.93}
+    ],
+    "expected_decision_kind": "backfill_rejected",
+    "expected_reference": null,
+    "why": "Conflicting trusted artifacts should block backfill instead of silently rewriting history."
+  },
+  {
+    "id": "low_confidence_backfill_gap",
+    "suite": "gateway_replanning",
+    "current_reference": "resume_aware_replan",
+    "release_cuts": [
+      {"tag":"v1.0.0","decision_kind":"keep_promoted","reference":"resume_aware_replan","documented":true},
+      {"tag":"v1.1.0","decision_kind":"missing_provenance","reference":null,"documented":false},
+      {"tag":"v1.2.0","decision_kind":"keep_promoted","reference":"resume_aware_replan","documented":true}
+    ],
+    "artifacts": [
+      {"source":"changelog","tag":"v1.1.0","decision_kind":"keep_promoted","reference":"resume_aware_replan","confidence":0.54}
+    ],
+    "expected_decision_kind": "backfill_gap",
+    "expected_reference": null,
+    "why": "A weak single-source note is not enough to repair missing provenance."
+  },
+  {
+    "id": "rollback_note_rejected",
+    "suite": "tool_output_validation",
+    "current_reference": "tolerant_contract",
+    "release_cuts": [
+      {"tag":"v1.3.0","decision_kind":"keep_promoted","reference":"tolerant_contract","documented":true},
+      {"tag":"v1.4.0","decision_kind":"missing_provenance","reference":null,"documented":false},
+      {"tag":"v1.5.0","decision_kind":"keep_promoted","reference":"tolerant_contract","documented":true}
+    ],
+    "artifacts": [
+      {"source":"release_notes","tag":"v1.4.0","decision_kind":"rollback_reference","reference":"tolerant_contract","confidence":0.97}
+    ],
+    "expected_decision_kind": "backfill_rejected",
+    "expected_reference": null,
+    "why": "A trusted rollback note should veto provenance repair."
+  },
+  {
+    "id": "notes_only_backfill_confirmed",
+    "suite": "backend_observation_fusion",
+    "current_reference": "failure_aware_merge",
+    "release_cuts": [
+      {"tag":"v1.6.0","decision_kind":"keep_promoted","reference":"failure_aware_merge","documented":true},
+      {"tag":"v1.7.0","decision_kind":"missing_provenance","reference":null,"documented":false},
+      {"tag":"v1.8.0","decision_kind":"keep_promoted","reference":"failure_aware_merge","documented":true}
+    ],
+    "artifacts": [
+      {"source":"release_notes","tag":"v1.7.0","decision_kind":"keep_promoted","reference":"failure_aware_merge","confidence":0.96}
+    ],
+    "expected_decision_kind": "backfill_confirmed",
+    "expected_reference": "failure_aware_merge",
+    "why": "A strong release-note entry should be sufficient when no conflicting artifact exists."
+  },
+  {
+    "id": "ambiguous_changelog_gap",
+    "suite": "ros2_observation_ingestion",
+    "current_reference": "stream_reducer",
+    "release_cuts": [
+      {"tag":"v1.9.0","decision_kind":"keep_promoted","reference":"stream_reducer","documented":true},
+      {"tag":"v2.0.0","decision_kind":"missing_provenance","reference":null,"documented":false},
+      {"tag":"v2.1.0","decision_kind":"keep_promoted","reference":"stream_reducer","documented":true}
+    ],
+    "artifacts": [
+      {"source":"changelog","tag":"v2.0.0","decision_kind":"replace_reference","reference":"action_state_join","confidence":0.68}
+    ],
+    "expected_decision_kind": "backfill_gap",
+    "expected_reference": null,
+    "why": "An ambiguous challenger note should stay unresolved instead of rewriting the current lineage."
+  },
+  {
+    "id": "documented_superseded_chain",
+    "suite": "promotion_provenance",
+    "current_reference": "lineage_budget",
+    "release_cuts": [
+      {"tag":"v2.2.0","decision_kind":"keep_promoted","reference":"documented_chain","documented":true},
+      {"tag":"v2.3.0","decision_kind":"replace_reference","reference":"lineage_budget","documented":true},
+      {"tag":"v2.4.0","decision_kind":"keep_promoted","reference":"lineage_budget","documented":true}
+    ],
+    "artifacts": [],
+    "expected_decision_kind": "backfill_superseded",
+    "expected_reference": "lineage_budget",
+    "why": "Backfill policy should still recognize a fully documented replacement chain."
+  }
+]

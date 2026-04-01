@@ -1,0 +1,120 @@
+[
+  {
+    "id": "runtime_only_confirmed",
+    "suite": "resume_policy",
+    "current_reference": "declared_checkpoint",
+    "release_tags": ["v0.1.0", "v0.2.0", "v0.3.0"],
+    "artifacts": [
+      {"repository":"runtime_repo","source":"changelog","tag":"v0.1.0","decision_kind":"keep_promoted","reference":"declared_checkpoint","confidence":0.85},
+      {"repository":"runtime_repo","source":"changelog","tag":"v0.2.0","decision_kind":"keep_promoted","reference":"declared_checkpoint","confidence":0.86},
+      {"repository":"runtime_repo","source":"changelog","tag":"v0.3.0","decision_kind":"keep_promoted","reference":"declared_checkpoint","confidence":0.88}
+    ],
+    "expected_decision_kind": "stitched_confirmed",
+    "expected_reference": "declared_checkpoint",
+    "why": "A complete runtime-repo chain should still stitch to the current reference."
+  },
+  {
+    "id": "split_repo_replace_to_current",
+    "suite": "gateway_replanning",
+    "current_reference": "resume_aware_replan",
+    "release_tags": ["v0.4.0", "v0.5.0", "v0.6.0"],
+    "artifacts": [
+      {"repository":"runtime_repo","source":"changelog","tag":"v0.4.0","decision_kind":"keep_promoted","reference":"current_gateway_clone","confidence":0.84},
+      {"repository":"docs_repo","source":"release_notes","tag":"v0.5.0","decision_kind":"replace_reference","reference":"resume_aware_replan","confidence":0.93},
+      {"repository":"release_repo","source":"changelog","tag":"v0.6.0","decision_kind":"keep_promoted","reference":"resume_aware_replan","confidence":0.91}
+    ],
+    "expected_decision_kind": "stitched_superseded",
+    "expected_reference": "resume_aware_replan",
+    "why": "A replacement chain can span runtime, docs, and release repos and still point to the current promoted surface."
+  },
+  {
+    "id": "split_repo_confirmed_continuity",
+    "suite": "backend_observation_fusion",
+    "current_reference": "failure_aware_merge",
+    "release_tags": ["v0.7.0", "v0.8.0", "v0.9.0"],
+    "artifacts": [
+      {"repository":"runtime_repo","source":"changelog","tag":"v0.7.0","decision_kind":"keep_promoted","reference":"failure_aware_merge","confidence":0.84},
+      {"repository":"runtime_repo","source":"changelog","tag":"v0.8.0","decision_kind":"keep_promoted","reference":"failure_aware_merge","confidence":0.88},
+      {"repository":"docs_repo","source":"release_notes","tag":"v0.8.0","decision_kind":"keep_promoted","reference":"failure_aware_merge","confidence":0.92},
+      {"repository":"docs_repo","source":"release_notes","tag":"v0.9.0","decision_kind":"keep_promoted","reference":"failure_aware_merge","confidence":0.93},
+      {"repository":"release_repo","source":"changelog","tag":"v0.9.0","decision_kind":"keep_promoted","reference":"failure_aware_merge","confidence":0.87}
+    ],
+    "expected_decision_kind": "stitched_confirmed",
+    "expected_reference": "failure_aware_merge",
+    "why": "A continuity chain may need different repositories for different release tags."
+  },
+  {
+    "id": "conflicting_same_tag_rejected",
+    "suite": "planner_prompt_shaping",
+    "current_reference": "prompt_constrained",
+    "release_tags": ["v1.0.0", "v1.1.0"],
+    "artifacts": [
+      {"repository":"runtime_repo","source":"changelog","tag":"v1.0.0","decision_kind":"keep_promoted","reference":"prompt_constrained","confidence":0.86},
+      {"repository":"runtime_repo","source":"changelog","tag":"v1.1.0","decision_kind":"keep_promoted","reference":"prompt_constrained","confidence":0.88},
+      {"repository":"docs_repo","source":"release_notes","tag":"v1.1.0","decision_kind":"rollback_reference","reference":"prompt_constrained","confidence":0.95}
+    ],
+    "expected_decision_kind": "stitched_rejected",
+    "expected_reference": null,
+    "why": "A strong same-tag contradiction across repos should reject the stitched chain."
+  },
+  {
+    "id": "external_pair_supersedes_current",
+    "suite": "planner_selection",
+    "current_reference": "catalog_score",
+    "release_tags": ["v1.2.0", "v1.3.0", "v1.4.0"],
+    "artifacts": [
+      {"repository":"runtime_repo","source":"changelog","tag":"v1.2.0","decision_kind":"keep_promoted","reference":"catalog_score","confidence":0.84},
+      {"repository":"runtime_repo","source":"changelog","tag":"v1.3.0","decision_kind":"keep_promoted","reference":"catalog_score","confidence":0.83},
+      {"repository":"docs_repo","source":"release_notes","tag":"v1.4.0","decision_kind":"replace_reference","reference":"pipeline_router","confidence":0.94},
+      {"repository":"release_repo","source":"changelog","tag":"v1.4.0","decision_kind":"replace_reference","reference":"pipeline_router","confidence":0.91}
+    ],
+    "expected_decision_kind": "stitched_superseded",
+    "expected_reference": "pipeline_router",
+    "why": "The latest pair of non-runtime artifacts can show that the current runtime surface has already been superseded."
+  },
+  {
+    "id": "release_repo_rollback_rejected",
+    "suite": "cross_provider_validation",
+    "current_reference": "mock",
+    "release_tags": ["v1.5.0", "v1.6.0"],
+    "artifacts": [
+      {"repository":"runtime_repo","source":"changelog","tag":"v1.5.0","decision_kind":"keep_promoted","reference":"mock","confidence":0.82},
+      {"repository":"docs_repo","source":"release_notes","tag":"v1.6.0","decision_kind":"keep_promoted","reference":"mock","confidence":0.88},
+      {"repository":"release_repo","source":"rollback_notes","tag":"v1.6.0","decision_kind":"rollback_reference","reference":"mock","confidence":0.97}
+    ],
+    "expected_decision_kind": "stitched_rejected",
+    "expected_reference": null,
+    "why": "A rollback note in a different repo should still veto the stitched provenance."
+  },
+  {
+    "id": "all_repo_agree_current",
+    "suite": "tool_output_validation",
+    "current_reference": "tolerant_contract",
+    "release_tags": ["v1.7.0", "v1.8.0"],
+    "artifacts": [
+      {"repository":"runtime_repo","source":"changelog","tag":"v1.7.0","decision_kind":"keep_promoted","reference":"tolerant_contract","confidence":0.84},
+      {"repository":"docs_repo","source":"release_notes","tag":"v1.7.0","decision_kind":"keep_promoted","reference":"tolerant_contract","confidence":0.91},
+      {"repository":"release_repo","source":"changelog","tag":"v1.7.0","decision_kind":"keep_promoted","reference":"tolerant_contract","confidence":0.86},
+      {"repository":"runtime_repo","source":"changelog","tag":"v1.8.0","decision_kind":"keep_promoted","reference":"tolerant_contract","confidence":0.87},
+      {"repository":"docs_repo","source":"release_notes","tag":"v1.8.0","decision_kind":"keep_promoted","reference":"tolerant_contract","confidence":0.92},
+      {"repository":"release_repo","source":"changelog","tag":"v1.8.0","decision_kind":"keep_promoted","reference":"tolerant_contract","confidence":0.88}
+    ],
+    "expected_decision_kind": "stitched_confirmed",
+    "expected_reference": "tolerant_contract",
+    "why": "When every repo agrees per tag, the stitched chain should stay simple."
+  },
+  {
+    "id": "tag_pair_needed_for_latest_release",
+    "suite": "promotion_provenance",
+    "current_reference": "lineage_budget",
+    "release_tags": ["v1.9.0", "v2.0.0"],
+    "artifacts": [
+      {"repository":"runtime_repo","source":"changelog","tag":"v1.9.0","decision_kind":"keep_promoted","reference":"documented_chain","confidence":0.82},
+      {"repository":"docs_repo","source":"release_notes","tag":"v2.0.0","decision_kind":"replace_reference","reference":"lineage_budget","confidence":0.95},
+      {"repository":"release_repo","source":"changelog","tag":"v2.0.0","decision_kind":"replace_reference","reference":"lineage_budget","confidence":0.92}
+    ],
+    "expected_decision_kind": "stitched_superseded",
+    "expected_reference": "lineage_budget",
+    "why": "A later replacement can be stitched only when the latest tag is joined across repositories."
+  }
+]

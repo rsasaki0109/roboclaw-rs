@@ -1,0 +1,25 @@
+name: recover_observation
+description: recover from a failed observation by resetting pose and rescanning the target
+resume_original_instruction: true
+recovery_for:
+  - failed_steps:
+      - detect_object
+    tools:
+      - sensor
+steps:
+  - name: move_to_reobserve
+    tool: simulator
+    input:
+      action: move_to
+      pose: home
+    expect:
+      accepted: true
+      state:
+        last_pose: "$input.pose"
+  - name: rescan_object
+    tool: sensor
+    input:
+      target: red_cube
+    expect:
+      detected: true
+      target: "$input.target"

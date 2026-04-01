@@ -1,0 +1,200 @@
+[
+  {
+    "id": "aligned_current_all_mirrors",
+    "suite": "resume_policy",
+    "current_reference": "declared_checkpoint",
+    "release_trains": [
+      {
+        "train": "2026.q1",
+        "artifacts": [
+          {"mirror":"package_registry","decision_kind":"keep_promoted","reference":"declared_checkpoint","confidence":0.84,"freshness_hours":6},
+          {"mirror":"docs_portal","decision_kind":"keep_promoted","reference":"declared_checkpoint","confidence":0.91,"freshness_hours":4},
+          {"mirror":"api_docs","decision_kind":"keep_promoted","reference":"declared_checkpoint","confidence":0.88,"freshness_hours":5}
+        ]
+      },
+      {
+        "train": "2026.q2",
+        "artifacts": [
+          {"mirror":"package_registry","decision_kind":"keep_promoted","reference":"declared_checkpoint","confidence":0.86,"freshness_hours":5},
+          {"mirror":"docs_portal","decision_kind":"keep_promoted","reference":"declared_checkpoint","confidence":0.92,"freshness_hours":3},
+          {"mirror":"api_docs","decision_kind":"keep_promoted","reference":"declared_checkpoint","confidence":0.89,"freshness_hours":4}
+        ]
+      }
+    ],
+    "expected_decision_kind": "mirror_confirmed",
+    "expected_reference": "declared_checkpoint",
+    "why": "Fresh agreement across all mirrors should preserve the current reference."
+  },
+  {
+    "id": "fresh_pair_challenger_supersedes",
+    "suite": "planner_selection",
+    "current_reference": "catalog_score",
+    "release_trains": [
+      {
+        "train": "2026.q1",
+        "artifacts": [
+          {"mirror":"package_registry","decision_kind":"keep_promoted","reference":"catalog_score","confidence":0.84,"freshness_hours":6},
+          {"mirror":"docs_portal","decision_kind":"keep_promoted","reference":"catalog_score","confidence":0.90,"freshness_hours":4}
+        ]
+      },
+      {
+        "train": "2026.q2",
+        "artifacts": [
+          {"mirror":"package_registry","decision_kind":"replace_reference","reference":"pipeline_router","confidence":0.92,"freshness_hours":4},
+          {"mirror":"docs_portal","decision_kind":"replace_reference","reference":"pipeline_router","confidence":0.95,"freshness_hours":3},
+          {"mirror":"api_docs","decision_kind":"keep_promoted","reference":"pipeline_router","confidence":0.86,"freshness_hours":8}
+        ]
+      }
+    ],
+    "expected_decision_kind": "mirror_superseded",
+    "expected_reference": "pipeline_router",
+    "why": "Fresh agreement from the strongest mirrors should move the train to the challenger."
+  },
+  {
+    "id": "stale_registry_noise_current",
+    "suite": "ros2_observation_ingestion",
+    "current_reference": "stream_reducer",
+    "release_trains": [
+      {
+        "train": "2026.q1",
+        "artifacts": [
+          {"mirror":"package_registry","decision_kind":"keep_promoted","reference":"stream_reducer","confidence":0.83,"freshness_hours":6},
+          {"mirror":"docs_portal","decision_kind":"keep_promoted","reference":"stream_reducer","confidence":0.91,"freshness_hours":5}
+        ]
+      },
+      {
+        "train": "2026.q2",
+        "artifacts": [
+          {"mirror":"package_registry","decision_kind":"replace_reference","reference":"action_state_join","confidence":0.87,"freshness_hours":120},
+          {"mirror":"docs_portal","decision_kind":"keep_promoted","reference":"stream_reducer","confidence":0.92,"freshness_hours":6},
+          {"mirror":"api_docs","decision_kind":"keep_promoted","reference":"stream_reducer","confidence":0.88,"freshness_hours":8}
+        ]
+      }
+    ],
+    "expected_decision_kind": "mirror_confirmed",
+    "expected_reference": "stream_reducer",
+    "why": "A stale registry mirror should not outweigh fresh docs and api mirrors."
+  },
+  {
+    "id": "fresh_conflict_same_train_drift",
+    "suite": "planner_prompt_shaping",
+    "current_reference": "prompt_constrained",
+    "release_trains": [
+      {
+        "train": "2026.q1",
+        "artifacts": [
+          {"mirror":"package_registry","decision_kind":"keep_promoted","reference":"prompt_constrained","confidence":0.82,"freshness_hours":7},
+          {"mirror":"docs_portal","decision_kind":"keep_promoted","reference":"prompt_constrained","confidence":0.90,"freshness_hours":5}
+        ]
+      },
+      {
+        "train": "2026.q2",
+        "artifacts": [
+          {"mirror":"package_registry","decision_kind":"replace_reference","reference":"schema_constrained","confidence":0.91,"freshness_hours":4},
+          {"mirror":"docs_portal","decision_kind":"keep_promoted","reference":"prompt_constrained","confidence":0.93,"freshness_hours":3}
+        ]
+      }
+    ],
+    "expected_decision_kind": "mirror_drift",
+    "expected_reference": null,
+    "why": "Fresh disagreement between registry and docs should stay unresolved."
+  },
+  {
+    "id": "package_yank_rejected",
+    "suite": "tool_output_validation",
+    "current_reference": "tolerant_contract",
+    "release_trains": [
+      {
+        "train": "2026.q1",
+        "artifacts": [
+          {"mirror":"package_registry","decision_kind":"keep_promoted","reference":"tolerant_contract","confidence":0.84,"freshness_hours":6},
+          {"mirror":"docs_portal","decision_kind":"keep_promoted","reference":"tolerant_contract","confidence":0.90,"freshness_hours":4}
+        ]
+      },
+      {
+        "train": "2026.q2",
+        "artifacts": [
+          {"mirror":"package_registry","decision_kind":"rollback_reference","reference":"tolerant_contract","confidence":0.96,"freshness_hours":2},
+          {"mirror":"docs_portal","decision_kind":"keep_promoted","reference":"tolerant_contract","confidence":0.92,"freshness_hours":4},
+          {"mirror":"api_docs","decision_kind":"keep_promoted","reference":"tolerant_contract","confidence":0.89,"freshness_hours":6}
+        ]
+      }
+    ],
+    "expected_decision_kind": "mirror_rejected",
+    "expected_reference": null,
+    "why": "A fresh registry yank should veto the mirrored publication train."
+  },
+  {
+    "id": "stale_yank_resolved_confirmed",
+    "suite": "gateway_replanning",
+    "current_reference": "resume_aware_replan",
+    "release_trains": [
+      {
+        "train": "2026.q1",
+        "artifacts": [
+          {"mirror":"package_registry","decision_kind":"rollback_reference","reference":"resume_aware_replan","confidence":0.94,"freshness_hours":3},
+          {"mirror":"docs_portal","decision_kind":"rollback_reference","reference":"resume_aware_replan","confidence":0.90,"freshness_hours":5}
+        ]
+      },
+      {
+        "train": "2026.q2",
+        "artifacts": [
+          {"mirror":"package_registry","decision_kind":"keep_promoted","reference":"resume_aware_replan","confidence":0.87,"freshness_hours":5},
+          {"mirror":"docs_portal","decision_kind":"keep_promoted","reference":"resume_aware_replan","confidence":0.93,"freshness_hours":4},
+          {"mirror":"api_docs","decision_kind":"keep_promoted","reference":"resume_aware_replan","confidence":0.90,"freshness_hours":6}
+        ]
+      }
+    ],
+    "expected_decision_kind": "mirror_confirmed",
+    "expected_reference": "resume_aware_replan",
+    "why": "An older yank should not dominate after a later train re-establishes all mirrors."
+  },
+  {
+    "id": "single_portal_challenger_drift",
+    "suite": "promotion_provenance",
+    "current_reference": "documented_chain",
+    "release_trains": [
+      {
+        "train": "2026.q1",
+        "artifacts": [
+          {"mirror":"package_registry","decision_kind":"keep_promoted","reference":"documented_chain","confidence":0.83,"freshness_hours":6},
+          {"mirror":"docs_portal","decision_kind":"keep_promoted","reference":"documented_chain","confidence":0.90,"freshness_hours":4}
+        ]
+      },
+      {
+        "train": "2026.q2",
+        "artifacts": [
+          {"mirror":"docs_portal","decision_kind":"replace_reference","reference":"lineage_budget","confidence":0.95,"freshness_hours":3}
+        ]
+      }
+    ],
+    "expected_decision_kind": "mirror_drift",
+    "expected_reference": null,
+    "why": "A single portal mirror is not enough to declare a new authoritative train."
+  },
+  {
+    "id": "release_feed_pair_supersedes",
+    "suite": "cross_provider_validation",
+    "current_reference": "mock",
+    "release_trains": [
+      {
+        "train": "2026.q1",
+        "artifacts": [
+          {"mirror":"package_registry","decision_kind":"keep_promoted","reference":"mock","confidence":0.82,"freshness_hours":6},
+          {"mirror":"docs_portal","decision_kind":"keep_promoted","reference":"mock","confidence":0.88,"freshness_hours":5}
+        ]
+      },
+      {
+        "train": "2026.q2",
+        "artifacts": [
+          {"mirror":"release_feed","decision_kind":"replace_reference","reference":"local","confidence":0.91,"freshness_hours":4},
+          {"mirror":"docs_portal","decision_kind":"replace_reference","reference":"local","confidence":0.93,"freshness_hours":3},
+          {"mirror":"package_registry","decision_kind":"keep_promoted","reference":"mock","confidence":0.78,"freshness_hours":72}
+        ]
+      }
+    ],
+    "expected_decision_kind": "mirror_superseded",
+    "expected_reference": "local",
+    "why": "A fresh feed plus docs pair can supersede a stale package mirror."
+  }
+]

@@ -1,0 +1,93 @@
+[
+  {
+    "id": "exact_subset",
+    "expectation": {
+      "detected": true,
+      "target": "red_cube"
+    },
+    "output": {
+      "detected": true,
+      "target": "red_cube",
+      "pose": "table_center"
+    },
+    "expected_match": true,
+    "why": "Baseline subset case should pass under every strategy."
+  },
+  {
+    "id": "normalized_pose",
+    "expectation": {
+      "pose": "bin_a"
+    },
+    "output": {
+      "pose": " BIN-A "
+    },
+    "expected_match": true,
+    "why": "Pose labels often differ only by case and punctuation."
+  },
+  {
+    "id": "numeric_string",
+    "expectation": {
+      "confidence": 0.9
+    },
+    "output": {
+      "confidence": "0.90"
+    },
+    "expected_match": true,
+    "why": "Simulators and REST bridges often stringify numeric confidence values."
+  },
+  {
+    "id": "bool_string",
+    "expectation": {
+      "detected": true
+    },
+    "output": {
+      "detected": "true"
+    },
+    "expected_match": true,
+    "why": "Legacy tools may serialize booleans as strings."
+  },
+  {
+    "id": "array_superset",
+    "expectation": {
+      "path": ["pregrasp", "grasp"]
+    },
+    "output": {
+      "path": ["home", "pregrasp", "grasp", "lift"]
+    },
+    "expected_match": true,
+    "why": "Outputs may add extra waypoints while still containing the expected sequence members."
+  },
+  {
+    "id": "array_unordered",
+    "expectation": {
+      "labels": ["cube", "bin"]
+    },
+    "output": {
+      "labels": ["bin", "cube", "table"]
+    },
+    "expected_match": true,
+    "why": "Evidence arrays are often unordered."
+  },
+  {
+    "id": "missing_field",
+    "expectation": {
+      "target_pose": "bin_a"
+    },
+    "output": {
+      "detected": true
+    },
+    "expected_match": false,
+    "why": "Missing required fields must fail under all variants."
+  },
+  {
+    "id": "wrong_target",
+    "expectation": {
+      "target": "red_cube"
+    },
+    "output": {
+      "target": "blue_cube"
+    },
+    "expected_match": false,
+    "why": "Semantically different targets must not match."
+  }
+]
