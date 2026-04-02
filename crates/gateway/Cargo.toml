@@ -1,0 +1,21 @@
+[package]
+name = "roboclaw-gateway"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+roboclaw_agent = { package = "roboclaw-agent", path = "../agent" }
+roboclaw_ros2 = { package = "roboclaw-ros2", path = "../ros2" }
+roboclaw_sim = { package = "roboclaw-sim", path = "../sim" }
+roboclaw_skills = { package = "roboclaw-skills", path = "../skills" }
+
+[features]
+default = []
+ros2 = ["roboclaw_ros2/ros2"]
+
+[dev-dependencies]
+roboclaw_memory = { package = "roboclaw-memory", path = "../memory" }
+roboclaw_tools = { package = "roboclaw-tools", path = "../tools" }

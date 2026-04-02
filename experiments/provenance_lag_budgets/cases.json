@@ -1,0 +1,225 @@
+[
+  {
+    "id": "aligned_current_all_surfaces",
+    "suite": "resume_policy",
+    "current_reference": "declared_checkpoint",
+    "release_trains": [
+      {
+        "train": "2026.q1",
+        "signals": [
+          {"surface":"package_registry","decision_kind":"keep_promoted","reference":"declared_checkpoint","confidence":0.84,"lag_hours":10,"allowed_lag_hours":24},
+          {"surface":"release_feed","decision_kind":"keep_promoted","reference":"declared_checkpoint","confidence":0.91,"lag_hours":2,"allowed_lag_hours":6},
+          {"surface":"docs_portal","decision_kind":"keep_promoted","reference":"declared_checkpoint","confidence":0.90,"lag_hours":4,"allowed_lag_hours":12}
+        ]
+      }
+    ],
+    "expected_decision_kind": "lag_confirmed",
+    "expected_reference": "declared_checkpoint",
+    "why": "When every publication surface agrees within its lag budget, the current reference should stay confirmed."
+  },
+  {
+    "id": "feed_and_docs_ahead_registry_within_budget_pending",
+    "suite": "planner_selection",
+    "current_reference": "catalog_score",
+    "release_trains": [
+      {
+        "train": "2026.q1",
+        "signals": [
+          {"surface":"package_registry","decision_kind":"keep_promoted","reference":"catalog_score","confidence":0.85,"lag_hours":9,"allowed_lag_hours":24},
+          {"surface":"release_feed","decision_kind":"keep_promoted","reference":"catalog_score","confidence":0.89,"lag_hours":2,"allowed_lag_hours":6},
+          {"surface":"docs_portal","decision_kind":"keep_promoted","reference":"catalog_score","confidence":0.88,"lag_hours":4,"allowed_lag_hours":12}
+        ]
+      },
+      {
+        "train": "2026.q2",
+        "signals": [
+          {"surface":"package_registry","decision_kind":"keep_promoted","reference":"catalog_score","confidence":0.84,"lag_hours":8,"allowed_lag_hours":24},
+          {"surface":"release_feed","decision_kind":"replace_reference","reference":"pipeline_router","confidence":0.93,"lag_hours":1,"allowed_lag_hours":6},
+          {"surface":"docs_portal","decision_kind":"replace_reference","reference":"pipeline_router","confidence":0.91,"lag_hours":4,"allowed_lag_hours":12}
+        ]
+      }
+    ],
+    "expected_decision_kind": "lag_pending",
+    "expected_reference": null,
+    "why": "Feed and docs can move ahead of the registry while the registry is still within its publication lag budget."
+  },
+  {
+    "id": "registry_overdue_after_budget_supersede",
+    "suite": "planner_selection",
+    "current_reference": "catalog_score",
+    "release_trains": [
+      {
+        "train": "2026.q1",
+        "signals": [
+          {"surface":"package_registry","decision_kind":"keep_promoted","reference":"catalog_score","confidence":0.85,"lag_hours":9,"allowed_lag_hours":24},
+          {"surface":"release_feed","decision_kind":"keep_promoted","reference":"catalog_score","confidence":0.89,"lag_hours":2,"allowed_lag_hours":6},
+          {"surface":"docs_portal","decision_kind":"keep_promoted","reference":"catalog_score","confidence":0.88,"lag_hours":4,"allowed_lag_hours":12}
+        ]
+      },
+      {
+        "train": "2026.q2",
+        "signals": [
+          {"surface":"package_registry","decision_kind":"keep_promoted","reference":"catalog_score","confidence":0.84,"lag_hours":36,"allowed_lag_hours":24},
+          {"surface":"release_feed","decision_kind":"replace_reference","reference":"pipeline_router","confidence":0.93,"lag_hours":1,"allowed_lag_hours":6},
+          {"surface":"docs_portal","decision_kind":"replace_reference","reference":"pipeline_router","confidence":0.91,"lag_hours":4,"allowed_lag_hours":12}
+        ]
+      }
+    ],
+    "expected_decision_kind": "lag_superseded",
+    "expected_reference": "pipeline_router",
+    "why": "Once the registry delay exceeds its budget, the challenger pair from feed and docs should supersede the old current reference."
+  },
+  {
+    "id": "single_docs_surface_ahead_pending",
+    "suite": "promotion_provenance",
+    "current_reference": "documented_chain",
+    "release_trains": [
+      {
+        "train": "2026.q1",
+        "signals": [
+          {"surface":"package_registry","decision_kind":"keep_promoted","reference":"documented_chain","confidence":0.84,"lag_hours":8,"allowed_lag_hours":24},
+          {"surface":"docs_portal","decision_kind":"keep_promoted","reference":"documented_chain","confidence":0.90,"lag_hours":4,"allowed_lag_hours":12}
+        ]
+      },
+      {
+        "train": "2026.q2",
+        "signals": [
+          {"surface":"package_registry","decision_kind":"keep_promoted","reference":"documented_chain","confidence":0.84,"lag_hours":7,"allowed_lag_hours":24},
+          {"surface":"docs_portal","decision_kind":"replace_reference","reference":"lineage_budget","confidence":0.95,"lag_hours":3,"allowed_lag_hours":12}
+        ]
+      }
+    ],
+    "expected_decision_kind": "lag_pending",
+    "expected_reference": null,
+    "why": "A single early docs update is not enough to spend the lag budget."
+  },
+  {
+    "id": "registry_yank_blocks_latest_train",
+    "suite": "tool_output_validation",
+    "current_reference": "tolerant_contract",
+    "release_trains": [
+      {
+        "train": "2026.q1",
+        "signals": [
+          {"surface":"package_registry","decision_kind":"keep_promoted","reference":"tolerant_contract","confidence":0.84,"lag_hours":8,"allowed_lag_hours":24},
+          {"surface":"release_feed","decision_kind":"keep_promoted","reference":"tolerant_contract","confidence":0.89,"lag_hours":2,"allowed_lag_hours":6},
+          {"surface":"docs_portal","decision_kind":"keep_promoted","reference":"tolerant_contract","confidence":0.90,"lag_hours":4,"allowed_lag_hours":12}
+        ]
+      },
+      {
+        "train": "2026.q2",
+        "signals": [
+          {"surface":"package_registry","decision_kind":"rollback_reference","reference":"tolerant_contract","confidence":0.96,"lag_hours":2,"allowed_lag_hours":24},
+          {"surface":"release_feed","decision_kind":"keep_promoted","reference":"tolerant_contract","confidence":0.91,"lag_hours":1,"allowed_lag_hours":6},
+          {"surface":"docs_portal","decision_kind":"keep_promoted","reference":"tolerant_contract","confidence":0.92,"lag_hours":4,"allowed_lag_hours":12}
+        ]
+      }
+    ],
+    "expected_decision_kind": "lag_blocked",
+    "expected_reference": null,
+    "why": "A fresh package-registry yank should block promotion even if slower surfaces still show the old state."
+  },
+  {
+    "id": "fresh_current_after_previous_rollback_confirmed",
+    "suite": "gateway_replanning",
+    "current_reference": "resume_aware_replan",
+    "release_trains": [
+      {
+        "train": "2026.q1",
+        "signals": [
+          {"surface":"package_registry","decision_kind":"rollback_reference","reference":"resume_aware_replan","confidence":0.94,"lag_hours":3,"allowed_lag_hours":24},
+          {"surface":"release_feed","decision_kind":"rollback_reference","reference":"resume_aware_replan","confidence":0.90,"lag_hours":2,"allowed_lag_hours":6}
+        ]
+      },
+      {
+        "train": "2026.q2",
+        "signals": [
+          {"surface":"package_registry","decision_kind":"keep_promoted","reference":"resume_aware_replan","confidence":0.87,"lag_hours":18,"allowed_lag_hours":24},
+          {"surface":"release_feed","decision_kind":"keep_promoted","reference":"resume_aware_replan","confidence":0.91,"lag_hours":2,"allowed_lag_hours":6},
+          {"surface":"docs_portal","decision_kind":"keep_promoted","reference":"resume_aware_replan","confidence":0.90,"lag_hours":5,"allowed_lag_hours":12}
+        ]
+      }
+    ],
+    "expected_decision_kind": "lag_confirmed",
+    "expected_reference": "resume_aware_replan",
+    "why": "A later train that re-establishes all surfaces within budget should clear the earlier rollback train."
+  },
+  {
+    "id": "persistent_split_past_budget_blocked",
+    "suite": "planner_prompt_shaping",
+    "current_reference": "prompt_constrained",
+    "release_trains": [
+      {
+        "train": "2026.q1",
+        "signals": [
+          {"surface":"package_registry","decision_kind":"keep_promoted","reference":"prompt_constrained","confidence":0.83,"lag_hours":9,"allowed_lag_hours":24},
+          {"surface":"release_feed","decision_kind":"keep_promoted","reference":"prompt_constrained","confidence":0.89,"lag_hours":2,"allowed_lag_hours":6},
+          {"surface":"docs_portal","decision_kind":"keep_promoted","reference":"prompt_constrained","confidence":0.90,"lag_hours":4,"allowed_lag_hours":12}
+        ]
+      },
+      {
+        "train": "2026.q2",
+        "signals": [
+          {"surface":"package_registry","decision_kind":"keep_promoted","reference":"prompt_constrained","confidence":0.84,"lag_hours":30,"allowed_lag_hours":24},
+          {"surface":"release_feed","decision_kind":"replace_reference","reference":"schema_constrained","confidence":0.93,"lag_hours":2,"allowed_lag_hours":6},
+          {"surface":"docs_portal","decision_kind":"keep_promoted","reference":"prompt_constrained","confidence":0.91,"lag_hours":20,"allowed_lag_hours":12}
+        ]
+      }
+    ],
+    "expected_decision_kind": "lag_blocked",
+    "expected_reference": null,
+    "why": "If current signals stay overdue but challenger evidence never spreads beyond one surface, the lag budget is exhausted and the train stays blocked."
+  },
+  {
+    "id": "registry_and_feed_challenger_docs_can_lag",
+    "suite": "cross_provider_validation",
+    "current_reference": "mock",
+    "release_trains": [
+      {
+        "train": "2026.q1",
+        "signals": [
+          {"surface":"package_registry","decision_kind":"keep_promoted","reference":"mock","confidence":0.82,"lag_hours":10,"allowed_lag_hours":24},
+          {"surface":"release_feed","decision_kind":"keep_promoted","reference":"mock","confidence":0.86,"lag_hours":2,"allowed_lag_hours":6},
+          {"surface":"docs_portal","decision_kind":"keep_promoted","reference":"mock","confidence":0.89,"lag_hours":4,"allowed_lag_hours":12}
+        ]
+      },
+      {
+        "train": "2026.q2",
+        "signals": [
+          {"surface":"package_registry","decision_kind":"replace_reference","reference":"local","confidence":0.89,"lag_hours":18,"allowed_lag_hours":24},
+          {"surface":"release_feed","decision_kind":"replace_reference","reference":"local","confidence":0.94,"lag_hours":1,"allowed_lag_hours":6},
+          {"surface":"docs_portal","decision_kind":"keep_promoted","reference":"mock","confidence":0.91,"lag_hours":6,"allowed_lag_hours":12}
+        ]
+      }
+    ],
+    "expected_decision_kind": "lag_superseded",
+    "expected_reference": "local",
+    "why": "Registry and release-feed agreement can supersede the docs portal while docs is still inside its lag budget."
+  },
+  {
+    "id": "all_surfaces_challenger_supersede",
+    "suite": "planner_selection",
+    "current_reference": "catalog_score",
+    "release_trains": [
+      {
+        "train": "2026.q1",
+        "signals": [
+          {"surface":"package_registry","decision_kind":"keep_promoted","reference":"catalog_score","confidence":0.85,"lag_hours":9,"allowed_lag_hours":24},
+          {"surface":"release_feed","decision_kind":"keep_promoted","reference":"catalog_score","confidence":0.89,"lag_hours":2,"allowed_lag_hours":6},
+          {"surface":"docs_portal","decision_kind":"keep_promoted","reference":"catalog_score","confidence":0.88,"lag_hours":4,"allowed_lag_hours":12}
+        ]
+      },
+      {
+        "train": "2026.q2",
+        "signals": [
+          {"surface":"package_registry","decision_kind":"replace_reference","reference":"pipeline_router","confidence":0.91,"lag_hours":16,"allowed_lag_hours":24},
+          {"surface":"release_feed","decision_kind":"replace_reference","reference":"pipeline_router","confidence":0.95,"lag_hours":1,"allowed_lag_hours":6},
+          {"surface":"docs_portal","decision_kind":"replace_reference","reference":"pipeline_router","confidence":0.92,"lag_hours":5,"allowed_lag_hours":12}
+        ]
+      }
+    ],
+    "expected_decision_kind": "lag_superseded",
+    "expected_reference": "pipeline_router",
+    "why": "Once every surface converges on the challenger within budget, the old reference should be superseded."
+  }
+]

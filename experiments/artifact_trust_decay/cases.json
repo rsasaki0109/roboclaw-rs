@@ -1,0 +1,243 @@
+[
+  {
+    "id": "stable_current_across_trains",
+    "suite": "resume_policy",
+    "current_reference": "declared_checkpoint",
+    "release_trains": [
+      {
+        "train": "2026.q1",
+        "artifacts": [
+          {"source":"changelog","decision_kind":"keep_promoted","reference":"declared_checkpoint","confidence":0.84},
+          {"source":"release_notes","decision_kind":"keep_promoted","reference":"declared_checkpoint","confidence":0.90}
+        ]
+      },
+      {
+        "train": "2026.q2",
+        "artifacts": [
+          {"source":"changelog","decision_kind":"keep_promoted","reference":"declared_checkpoint","confidence":0.87},
+          {"source":"release_notes","decision_kind":"keep_promoted","reference":"declared_checkpoint","confidence":0.93}
+        ]
+      }
+    ],
+    "expected_decision_kind": "trust_confirmed",
+    "expected_reference": "declared_checkpoint",
+    "why": "Repeated current-reference agreement across trains should preserve trust."
+  },
+  {
+    "id": "consistent_challenger_supersedes",
+    "suite": "planner_selection",
+    "current_reference": "catalog_score",
+    "release_trains": [
+      {
+        "train": "2026.q1",
+        "artifacts": [
+          {"source":"changelog","decision_kind":"keep_promoted","reference":"catalog_score","confidence":0.82},
+          {"source":"release_notes","decision_kind":"keep_promoted","reference":"catalog_score","confidence":0.88}
+        ]
+      },
+      {
+        "train": "2026.q2",
+        "artifacts": [
+          {"source":"changelog","decision_kind":"replace_reference","reference":"pipeline_router","confidence":0.90},
+          {"source":"release_notes","decision_kind":"replace_reference","reference":"pipeline_router","confidence":0.94}
+        ]
+      },
+      {
+        "train": "2026.q3",
+        "artifacts": [
+          {"source":"changelog","decision_kind":"keep_promoted","reference":"pipeline_router","confidence":0.85},
+          {"source":"release_notes","decision_kind":"keep_promoted","reference":"pipeline_router","confidence":0.92}
+        ]
+      }
+    ],
+    "expected_decision_kind": "trust_superseded",
+    "expected_reference": "pipeline_router",
+    "why": "Repeated challenger support across later trains should shift trust to the replacement reference."
+  },
+  {
+    "id": "latest_train_conflict_decay",
+    "suite": "planner_prompt_shaping",
+    "current_reference": "prompt_constrained",
+    "release_trains": [
+      {
+        "train": "2026.q1",
+        "artifacts": [
+          {"source":"changelog","decision_kind":"keep_promoted","reference":"prompt_constrained","confidence":0.86},
+          {"source":"release_notes","decision_kind":"keep_promoted","reference":"prompt_constrained","confidence":0.91}
+        ]
+      },
+      {
+        "train": "2026.q2",
+        "artifacts": [
+          {"source":"changelog","decision_kind":"keep_promoted","reference":"prompt_constrained","confidence":0.89},
+          {"source":"release_notes","decision_kind":"replace_reference","reference":"schema_constrained","confidence":0.91}
+        ]
+      }
+    ],
+    "expected_decision_kind": "trust_decay",
+    "expected_reference": null,
+    "why": "A conflicting latest train should reduce trust instead of selecting a winner immediately."
+  },
+  {
+    "id": "rollback_note_rejected",
+    "suite": "tool_output_validation",
+    "current_reference": "tolerant_contract",
+    "release_trains": [
+      {
+        "train": "2026.q1",
+        "artifacts": [
+          {"source":"changelog","decision_kind":"keep_promoted","reference":"tolerant_contract","confidence":0.81},
+          {"source":"release_notes","decision_kind":"keep_promoted","reference":"tolerant_contract","confidence":0.88}
+        ]
+      },
+      {
+        "train": "2026.q2",
+        "artifacts": [
+          {"source":"changelog","decision_kind":"keep_promoted","reference":"tolerant_contract","confidence":0.84},
+          {"source":"release_notes","decision_kind":"keep_promoted","reference":"tolerant_contract","confidence":0.90},
+          {"source":"rollback_notes","decision_kind":"rollback_reference","reference":"tolerant_contract","confidence":0.96}
+        ]
+      }
+    ],
+    "expected_decision_kind": "trust_rejected",
+    "expected_reference": null,
+    "why": "A strong rollback note in the latest train should invalidate artifact trust."
+  },
+  {
+    "id": "stale_rollback_resolved_confirmed",
+    "suite": "gateway_replanning",
+    "current_reference": "resume_aware_replan",
+    "release_trains": [
+      {
+        "train": "2026.q1",
+        "artifacts": [
+          {"source":"rollback_notes","decision_kind":"rollback_reference","reference":"resume_aware_replan","confidence":0.95},
+          {"source":"release_notes","decision_kind":"rollback_reference","reference":"resume_aware_replan","confidence":0.92}
+        ]
+      },
+      {
+        "train": "2026.q2",
+        "artifacts": [
+          {"source":"changelog","decision_kind":"keep_promoted","reference":"resume_aware_replan","confidence":0.87},
+          {"source":"release_notes","decision_kind":"keep_promoted","reference":"resume_aware_replan","confidence":0.94}
+        ]
+      },
+      {
+        "train": "2026.q3",
+        "artifacts": [
+          {"source":"changelog","decision_kind":"keep_promoted","reference":"resume_aware_replan","confidence":0.88},
+          {"source":"release_notes","decision_kind":"keep_promoted","reference":"resume_aware_replan","confidence":0.93}
+        ]
+      }
+    ],
+    "expected_decision_kind": "trust_confirmed",
+    "expected_reference": "resume_aware_replan",
+    "why": "An old rollback should not dominate if later trains repeatedly re-establish the same reference."
+  },
+  {
+    "id": "latest_sparse_note_decay",
+    "suite": "backend_observation_fusion",
+    "current_reference": "failure_aware_merge",
+    "release_trains": [
+      {
+        "train": "2026.q1",
+        "artifacts": [
+          {"source":"changelog","decision_kind":"keep_promoted","reference":"failure_aware_merge","confidence":0.84},
+          {"source":"release_notes","decision_kind":"keep_promoted","reference":"failure_aware_merge","confidence":0.89}
+        ]
+      },
+      {
+        "train": "2026.q2",
+        "artifacts": [
+          {"source":"changelog","decision_kind":"keep_promoted","reference":"failure_aware_merge","confidence":0.58}
+        ]
+      }
+    ],
+    "expected_decision_kind": "trust_decay",
+    "expected_reference": null,
+    "why": "A sparse low-confidence latest note should not carry trust by itself."
+  },
+  {
+    "id": "history_outvotes_latest_noise_confirmed",
+    "suite": "ros2_observation_ingestion",
+    "current_reference": "stream_reducer",
+    "release_trains": [
+      {
+        "train": "2026.q1",
+        "artifacts": [
+          {"source":"changelog","decision_kind":"keep_promoted","reference":"stream_reducer","confidence":0.86},
+          {"source":"release_notes","decision_kind":"keep_promoted","reference":"stream_reducer","confidence":0.91}
+        ]
+      },
+      {
+        "train": "2026.q2",
+        "artifacts": [
+          {"source":"changelog","decision_kind":"keep_promoted","reference":"stream_reducer","confidence":0.88},
+          {"source":"release_notes","decision_kind":"keep_promoted","reference":"stream_reducer","confidence":0.92}
+        ]
+      },
+      {
+        "train": "2026.q3",
+        "artifacts": [
+          {"source":"changelog","decision_kind":"replace_reference","reference":"action_state_join","confidence":0.78}
+        ]
+      }
+    ],
+    "expected_decision_kind": "trust_confirmed",
+    "expected_reference": "stream_reducer",
+    "why": "A single noisy latest changelog should not outweigh stable historical agreement."
+  },
+  {
+    "id": "stale_rollback_unresolved_decay",
+    "suite": "cross_provider_validation",
+    "current_reference": "mock",
+    "release_trains": [
+      {
+        "train": "2026.q1",
+        "artifacts": [
+          {"source":"changelog","decision_kind":"keep_promoted","reference":"mock","confidence":0.81},
+          {"source":"release_notes","decision_kind":"keep_promoted","reference":"mock","confidence":0.88}
+        ]
+      },
+      {
+        "train": "2026.q2",
+        "artifacts": [
+          {"source":"rollback_notes","decision_kind":"rollback_reference","reference":"mock","confidence":0.84}
+        ]
+      },
+      {
+        "train": "2026.q3",
+        "artifacts": [
+          {"source":"changelog","decision_kind":"keep_promoted","reference":"mock","confidence":0.72}
+        ]
+      }
+    ],
+    "expected_decision_kind": "trust_decay",
+    "expected_reference": null,
+    "why": "Later weak reassurance is not enough to erase an older rollback signal."
+  },
+  {
+    "id": "latest_release_notes_supersede",
+    "suite": "promotion_provenance",
+    "current_reference": "documented_chain",
+    "release_trains": [
+      {
+        "train": "2026.q1",
+        "artifacts": [
+          {"source":"changelog","decision_kind":"keep_promoted","reference":"documented_chain","confidence":0.83},
+          {"source":"release_notes","decision_kind":"keep_promoted","reference":"documented_chain","confidence":0.88}
+        ]
+      },
+      {
+        "train": "2026.q2",
+        "artifacts": [
+          {"source":"changelog","decision_kind":"replace_reference","reference":"lineage_budget","confidence":0.89},
+          {"source":"release_notes","decision_kind":"replace_reference","reference":"lineage_budget","confidence":0.96}
+        ]
+      }
+    ],
+    "expected_decision_kind": "trust_superseded",
+    "expected_reference": "lineage_budget",
+    "why": "A strong latest release train can legitimately move trust to a challenger when both primary artifacts agree."
+  }
+]

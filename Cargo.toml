@@ -1,0 +1,41 @@
+[package]
+name = "roboclaw-rs"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Agent-first robotics gateway for RoboClaw-style control in Rust"
+
+[workspace]
+members = [
+    "crates/gateway",
+    "crates/agent",
+    "crates/skills",
+    "crates/tools",
+    "crates/memory",
+    "crates/ros2",
+    "crates/sim",
+]
+resolver = "2"
+
+[workspace.dependencies]
+anyhow = "1.0"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+roboclaw_agent = { package = "roboclaw-agent", path = "crates/agent" }
+roboclaw_gateway = { package = "roboclaw-gateway", path = "crates/gateway" }
+roboclaw_memory = { package = "roboclaw-memory", path = "crates/memory" }
+roboclaw_ros2 = { package = "roboclaw-ros2", path = "crates/ros2" }
+roboclaw_sim = { package = "roboclaw-sim", path = "crates/sim" }
+roboclaw_skills = { package = "roboclaw-skills", path = "crates/skills" }
+roboclaw_tools = { package = "roboclaw-tools", path = "crates/tools" }
+
+[features]
+default = []
+ros2 = ["roboclaw_gateway/ros2"]

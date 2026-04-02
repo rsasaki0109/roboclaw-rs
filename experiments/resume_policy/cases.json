@@ -1,0 +1,37 @@
+[
+  {
+    "id": "pick-detect",
+    "skill": "pick_and_place",
+    "failed_step": "detect_object",
+    "expected_resume_step": "detect_object",
+    "why": "Detection failures should retry detection directly."
+  },
+  {
+    "id": "pick-grasp",
+    "skill": "pick_and_place",
+    "failed_step": "grasp",
+    "expected_resume_step": "move_to_object",
+    "why": "Current YAML declares a pre-grasp checkpoint before retrying grasp."
+  },
+  {
+    "id": "pick-place",
+    "skill": "pick_and_place",
+    "failed_step": "place_object",
+    "expected_resume_step": "place_object",
+    "why": "Place failures should not restart the whole skill."
+  },
+  {
+    "id": "wave-peak",
+    "skill": "wave_arm",
+    "failed_step": "move_to_wave_peak",
+    "expected_resume_step": "move_to_wave_peak",
+    "why": "Wave peak is safe to retry directly according to current skill metadata."
+  },
+  {
+    "id": "wave-return",
+    "skill": "wave_arm",
+    "failed_step": "return_home",
+    "expected_resume_step": "return_home",
+    "why": "Returning home is also resumable from its own step."
+  }
+]
