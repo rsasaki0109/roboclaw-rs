@@ -1,6 +1,10 @@
 # roboclaw-rs
 
+![roboclaw-rs social preview](docs/assets/github-social-preview.png)
+
 `roboclaw-rs` is a Rust-first, agent-first robotics workspace that unifies simulator and real robot control behind the same interfaces. The current implementation is intentionally minimal: it boots an OpenClaw-inspired agent loop, loads YAML skills dynamically, persists memory to disk, and runs a pick-and-place demo against a simulator backend.
+
+Tagline: Agent-first robotics workspace in Rust with ROS 2 hooks, YAML skills, simulator and hardware backends, and LLM-plannable execution.
 
 ## Goals
 
@@ -291,6 +295,13 @@ Or directly:
 ```bash
 cargo run --example planner_experiments -- --write-docs
 ```
+
+## GitHub Metadata
+
+- About description: `Rust-first, agent-first robotics workspace with ROS 2 hooks, YAML skills, simulator/hardware backends, and LLM-plannable execution.`
+- About homepage: `https://github.com/rsasaki0109/roboclaw-rs#readme`
+- Social preview asset: `docs/assets/github-social-preview.png`
+- GitHub UI path for upload: `Settings -> General -> Social preview`
 
 This updates:
 
