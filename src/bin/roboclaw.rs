@@ -1,30 +1,34 @@
-use anyhow::Result;
+use anyhow::{bail, Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use roboclaw_rs::agent::{
-    planner_for_provider, planner_from_env, Agent, ExecutionStatus, Executor, LlmProvider,
-    PlanDecision, Planner,
-};
-use roboclaw_rs::gateway::RoboclawGateway;
-use roboclaw_rs::memory::Memory;
-use roboclaw_rs::ros2::Ros2Bridge;
-use roboclaw_rs::sim::{GazeboBackend, RobotBackend};
-use roboclaw_rs::skills::SkillCatalog;
-use roboclaw_rs::tools::{
-    ExecutionControl, MotorControlTool, SensorTool, SimulatorTool, ToolRegistry,
-};
+use roboclaw_rs::agent::ExecutionStatus;
+use roboclaw_rs::config::{parse_duration, Config, BUILTIN_TOOLS};
+use roboclaw_rs::jobs::Jobs;
+use roboclaw_rs::memory::{atomic_write, EventObserver, Memory};
+use roboclaw_rs::runtime::{RunOutput, RunRequest, Workspace};
+use roboclaw_rs::storage::now_millis;
+use roboclaw_rs::tools::ExecutionControl;
 use serde::Serialize;
+use serde_json::json;
 use std::io::{self, Write};
-use std::path::{Path, PathBuf};
+use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 #[derive(Parser)]
-#[command(name = "roboclaw", version, about = "Inspect and run robot skills")]
+#[command(
+    name = "roboclaw",
+    version,
+    about = "Plan, run and inspect robot workspaces"
+)]
 struct Cli {
-    /// Directory containing skills/ and prompts/.
+    /// Directory containing skills/, prompts/ and optional roboclaw.yaml.
     #[arg(long, global = true, default_value = ".")]
     project_dir: PathBuf,
+    /// Explicit YAML configuration path; defaults to PROJECT_DIR/roboclaw.yaml.
+    #[arg(long, global = true)]
+    config: Option<PathBuf>,
     /// Print structured JSON instead of a human-readable summary.
     #[arg(long, global = true)]
     json: bool,
@@ -34,40 +38,176 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum CliCommand {
-    /// Inspect the available YAML skills.
+    /// Inspect and validate YAML skills.
     Skills {
         #[command(subcommand)]
         command: SkillsCommand,
     },
-    /// Select a skill and show its steps without executing robot commands.
+    /// Select a skill without initializing a robot backend or memory.
     Plan(InstructionArgs),
     /// Execute an instruction with the in-process simulator.
     Run {
         #[command(flatten)]
         args: InstructionArgs,
-        /// Memory storage directory; defaults to PROJECT_DIR/target/cli-memory.
+        #[arg(long, default_value = "main")]
+        session: String,
+        /// Override memory storage (main defaults to PROJECT_DIR/target/cli-memory).
         #[arg(long)]
         memory_dir: Option<PathBuf>,
-        /// Shared execution deadline, e.g. 30s or 2m; checked cooperatively.
+        /// Shared execution budget, e.g. 30s or 2m.
         #[arg(long, value_parser = parse_timeout)]
         timeout: Option<Duration>,
+        /// Stream newline-delimited JSON events and a final result.
+        #[arg(long, conflicts_with = "json")]
+        stream: bool,
+    },
+    /// Inspect built-in tools and their effective policy.
+    Tools {
+        #[command(subcommand)]
+        command: ToolsCommand,
+    },
+    /// Inspect or initialize workspace configuration.
+    Config {
+        #[command(subcommand)]
+        command: ConfigCommand,
+    },
+    /// Check configuration, assets, credentials and stored state without robot actions.
+    Doctor,
+    /// Inspect persistent sessions and their run history.
+    Sessions {
+        #[command(subcommand)]
+        command: SessionsCommand,
+    },
+    /// Inspect runs and their structured event traces.
+    Runs {
+        #[command(subcommand)]
+        command: RunsCommand,
+    },
+    /// Search or inspect a session's local memory.
+    Memory {
+        #[command(subcommand)]
+        command: MemoryCommand,
+    },
+    /// Submit and manage persistent one-time or interval jobs.
+    Jobs {
+        #[command(subcommand)]
+        command: JobsCommand,
+    },
+    /// Start the local control API, dashboard and job runner.
+    Gateway {
+        #[command(subcommand)]
+        command: GatewayCommand,
     },
 }
 
 #[derive(Subcommand)]
 enum SkillsCommand {
-    /// List skill names, descriptions, and step counts.
     List,
+    Show { name: String },
+    Validate,
+}
+#[derive(Subcommand)]
+enum ToolsCommand {
+    List,
+}
+#[derive(Subcommand)]
+enum ConfigCommand {
+    Init,
+    Show,
+    Check,
+}
+#[derive(Subcommand)]
+enum SessionsCommand {
+    List,
+    Show { id: String },
+}
+#[derive(Subcommand)]
+enum RunsCommand {
+    List,
+    Show {
+        id: String,
+    },
+    Events {
+        id: String,
+        #[arg(long, default_value_t = 0)]
+        after: usize,
+    },
+}
+#[derive(Subcommand)]
+enum MemoryCommand {
+    Remember {
+        note: String,
+        #[arg(long, default_value = "main")]
+        session: String,
+    },
+    Search {
+        query: String,
+        #[arg(long, default_value = "main")]
+        session: String,
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
+    },
+    Show {
+        #[arg(long, default_value = "main")]
+        session: String,
+    },
+}
+#[derive(Subcommand)]
+enum JobsCommand {
+    Add {
+        #[command(flatten)]
+        args: InstructionArgs,
+        /// Share an existing session; otherwise create an isolated job session.
+        #[arg(long)]
+        session: Option<String>,
+        /// Delay before the first run, e.g. 10m.
+        #[arg(long, value_parser = parse_timeout)]
+        after: Option<Duration>,
+        /// Repeat successful runs at this interval. Failed or cancelled jobs stop.
+        #[arg(long, value_parser = parse_timeout)]
+        every: Option<Duration>,
+        #[arg(long, value_parser = parse_timeout)]
+        timeout: Option<Duration>,
+    },
+    List,
+    Show {
+        id: String,
+    },
+    Cancel {
+        id: String,
+    },
+    /// Run currently due jobs once; requires that no gateway runner is active.
+    Run {
+        #[arg(long, default_value_t = 100)]
+        limit: usize,
+    },
+}
+#[derive(Subcommand)]
+enum GatewayCommand {
+    Serve {
+        #[arg(long, default_value = "127.0.0.1:18790")]
+        bind: SocketAddr,
+    },
 }
 
 #[derive(Args)]
 struct InstructionArgs {
-    /// Instruction to plan or execute (quote instructions containing spaces).
     #[arg(value_parser = parse_instruction)]
     instruction: String,
-    /// Planner provider; auto uses ROBOCLAW_LLM_PROVIDER and provider discovery.
-    #[arg(long, value_enum, default_value = "mock")]
-    provider: Provider,
+    /// Explicit provider selections use no configured fallback unless requested.
+    #[arg(long, value_enum)]
+    provider: Option<Provider>,
+    /// Opt in to fallback providers, in order (repeat or comma-separate).
+    #[arg(
+        long = "fallback",
+        value_enum,
+        value_delimiter = ',',
+        conflicts_with = "no_fallbacks"
+    )]
+    fallbacks: Vec<Provider>,
+    /// Disable configured provider fallback.
+    #[arg(long)]
+    no_fallbacks: bool,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -79,46 +219,50 @@ enum Provider {
     OpenAi,
     Claude,
 }
-
 impl Provider {
-    fn planner(self, prompt: &Path) -> Result<Box<dyn Planner>> {
-        let provider = match self {
-            Self::Auto => return planner_from_env(prompt),
-            Self::Mock => LlmProvider::Mock,
-            Self::Local => LlmProvider::Local,
-            Self::OpenAi => LlmProvider::OpenAi,
-            Self::Claude => LlmProvider::Claude,
-        };
-        planner_for_provider(prompt, provider)
+    fn name(self) -> &'static str {
+        match self {
+            Self::Mock => "mock",
+            Self::Auto => "auto",
+            Self::Local => "local",
+            Self::OpenAi => "openai",
+            Self::Claude => "claude",
+        }
     }
 }
-
-#[derive(Serialize)]
-struct PlanOutput {
-    instruction: String,
-    planner_provider: &'static str,
-    decision: PlanDecision,
+fn request(args: InstructionArgs, session: String) -> RunRequest {
+    RunRequest {
+        instruction: args.instruction,
+        session,
+        provider: args.provider.map(|provider| provider.name().into()),
+        fallbacks: if args.no_fallbacks || !args.fallbacks.is_empty() {
+            Some(
+                args.fallbacks
+                    .into_iter()
+                    .map(|provider| provider.name().into())
+                    .collect(),
+            )
+        } else {
+            None
+        },
+        timeout: None,
+    }
 }
-
 fn parse_instruction(value: &str) -> std::result::Result<String, String> {
-    if value.trim().is_empty() {
-        Err("instruction must not be empty".to_string())
+    if value.trim().is_empty() || value.len() > 16_384 {
+        Err("instruction must contain 1–16384 bytes".into())
     } else {
-        Ok(value.to_string())
+        Ok(value.into())
     }
 }
-
 fn parse_timeout(value: &str) -> std::result::Result<Duration, String> {
-    let duration = humantime::parse_duration(value).map_err(|error| error.to_string())?;
-    if duration.is_zero() {
-        return Err("timeout must be greater than zero".to_string());
-    }
-    if Instant::now().checked_add(duration).is_none() {
-        return Err("timeout is too large".to_string());
-    }
-    Ok(duration)
+    parse_duration(value).map_err(|error| error.to_string())
 }
-
+fn signal_control(control: &ExecutionControl) -> Result<()> {
+    let control = control.clone();
+    ctrlc::set_handler(move || control.cancel())?;
+    Ok(())
+}
 fn main() -> ExitCode {
     match execute(Cli::parse()) {
         Ok(status) => status,
@@ -128,133 +272,209 @@ fn main() -> ExitCode {
         }
     }
 }
-
 fn execute(cli: Cli) -> Result<ExitCode> {
-    let catalog = SkillCatalog::from_dir(cli.project_dir.join("skills"))?;
+    if matches!(&cli.command, CliCommand::Doctor) {
+        let report = roboclaw_rs::doctor::diagnose(&cli.project_dir, cli.config.as_deref());
+        if cli.json {
+            print_json(&report)?;
+        } else {
+            for check in &report.checks {
+                println!(
+                    "{} {}: {}",
+                    if check.ok { "ok" } else { "error" },
+                    check.name,
+                    check.detail
+                );
+            }
+        }
+        return Ok(if report.ok {
+            ExitCode::SUCCESS
+        } else {
+            ExitCode::FAILURE
+        });
+    }
+    if matches!(
+        &cli.command,
+        CliCommand::Config {
+            command: ConfigCommand::Init
+        }
+    ) {
+        let path = cli
+            .config
+            .unwrap_or_else(|| cli.project_dir.join("roboclaw.yaml"));
+        if path.exists() {
+            bail!("config already exists: {:?}", path);
+        }
+        atomic_write(&path, serde_yaml::to_string(&Config::default())?.as_bytes())?;
+        output(&json!({"created": path}), cli.json)?;
+        return Ok(ExitCode::SUCCESS);
+    }
+    let workspace = Workspace::load(&cli.project_dir, cli.config.as_deref())?;
     match cli.command {
-        CliCommand::Skills {
-            command: SkillsCommand::List,
-        } => {
-            let skills = catalog.values().collect::<Vec<_>>();
-            if cli.json {
-                print_json(&skills)?;
-            } else {
-                for skill in skills {
-                    println!(
-                        "{}\t{} steps\t{}",
-                        skill.name,
-                        skill.steps.len(),
-                        skill.description
-                    );
+        CliCommand::Skills { command } => {
+            let catalog = workspace.catalog()?;
+            match command {
+                SkillsCommand::List => {
+                    let skills = catalog.values().collect::<Vec<_>>();
+                    if cli.json { print_json(&skills)?; } else { for skill in skills { println!("{}\t{} steps\t{}", skill.name, skill.steps.len(), skill.description); } }
                 }
+                SkillsCommand::Show { name } => output(catalog.get(&name).with_context(|| format!("unknown skill '{name}'"))?, cli.json)?,
+                SkillsCommand::Validate => { let catalog = workspace.validate_skills()?; output(&json!({"valid": true, "skills": catalog.names()}), cli.json)?; }
             }
         }
+        CliCommand::Tools { command: ToolsCommand::List } => output(&BUILTIN_TOOLS.iter().map(|name| json!({"name": name, "allowed": workspace.config.tools.check(name).is_ok()})).collect::<Vec<_>>(), cli.json)?,
+        CliCommand::Config { command } => match command {
+            ConfigCommand::Show => output(&workspace.config, cli.json)?,
+            ConfigCommand::Check => output(&json!({"valid": true}), cli.json)?,
+            ConfigCommand::Init => unreachable!(),
+        },
         CliCommand::Plan(args) => {
-            let planner = args
-                .provider
-                .planner(&cli.project_dir.join("prompts/planner_prompt.txt"))?;
-            let output = PlanOutput {
-                decision: planner.plan(args.instruction.clone(), &catalog)?,
-                planner_provider: planner.provider_name(),
-                instruction: args.instruction,
-            };
-            if cli.json {
-                print_json(&output)?;
-            } else {
-                println!("planner_provider={}", output.planner_provider);
-                println!("selected_skill={}", output.decision.skill.name);
-                println!(
-                    "planner_reason={}",
-                    output.decision.reason.as_deref().unwrap_or("none")
-                );
-                for (index, step) in output.decision.skill.steps.iter().enumerate() {
-                    println!(
-                        "{}. {} ({}) input={}",
-                        index + 1,
-                        step.name,
-                        step.tool,
-                        step.input
-                    );
-                }
+            let result = workspace.plan(request(args, "main".into()))?;
+            if cli.json { print_json(&result)?; } else {
+                println!("planner_provider={}", result.planner_provider);
+                println!("selected_skill={}", result.decision.skill.name);
+                println!("planner_reason={}", result.decision.reason.as_deref().unwrap_or("none"));
+                for (index, step) in result.decision.skill.steps.iter().enumerate() { println!("{}. {} ({}) input={}", index + 1, step.name, step.tool, step.input); }
             }
         }
-        CliCommand::Run {
-            args,
-            memory_dir,
-            timeout,
-        } => {
-            let control = match timeout {
-                Some(timeout) => ExecutionControl::with_timeout(timeout)?,
-                None => ExecutionControl::default(),
-            };
-            let signal_control = control.clone();
-            ctrlc::set_handler(move || signal_control.cancel())?;
-            let planner = args
-                .provider
-                .planner(&cli.project_dir.join("prompts/planner_prompt.txt"))?;
-            let ros2 = Ros2Bridge::from_env("roboclaw_cli")?;
-            let memory = Memory::new(
-                memory_dir.unwrap_or_else(|| cli.project_dir.join("target/cli-memory")),
-            )?;
-            let backend: Arc<dyn RobotBackend> = Arc::new(GazeboBackend::with_ros2(ros2.clone()));
-            let mut registry = ToolRegistry::new();
-            registry.register_tool(SensorTool::default());
-            registry.register_tool(SimulatorTool::new(backend.clone()));
-            registry.register_tool(MotorControlTool::new(backend.clone()));
-            let agent = Agent::new(memory, planner, Executor::new(registry));
-            let mut gateway = RoboclawGateway::new(agent, catalog, ros2, backend);
-            let result = gateway.handle_instruction_with_control(&args.instruction, &control)?;
-            if cli.json {
-                print_json(&result)?;
-            } else {
-                println!("status={}", result.status.as_str());
-                println!("completed={}", result.status == ExecutionStatus::Completed);
-                println!("execution_attempts={}", result.reports.len());
-                println!("replans={}", result.replans);
-                if let Some(report) = &result.report {
-                    println!("planner_provider={}", report.planner_provider);
-                    println!("selected_skill={}", report.skill.name);
-                    println!(
-                        "failed_step={}",
-                        report.failed_step.as_deref().unwrap_or("none")
-                    );
+        CliCommand::Run { args, session, memory_dir, timeout, stream } => {
+            let mut request = request(args, session);
+            request.timeout = timeout.map(|timeout| humantime::format_duration(timeout).to_string());
+            let control = workspace.control(&request)?;
+            signal_control(&control)?;
+            let observer: Option<EventObserver> = stream.then(|| Arc::new(|event: &roboclaw_rs::memory::Event| print_line(&json!({"type": "event", "event": event}))) as EventObserver);
+            let execution = workspace.run(request, &control, observer, memory_dir.as_deref());
+            if stream {
+                match &execution { Ok(result) => print_line(&json!({"type": "result", "result": result}))?, Err(error) => print_line(&json!({"type": "error", "error": format!("{error:#}")}))? }
+            }
+            let result = execution?;
+            if !stream { if cli.json { print_json(&result)?; } else { print_run(&result); } }
+            return Ok(exit_status(result.execution.status));
+        }
+        CliCommand::Sessions { command } => match command {
+            SessionsCommand::List => output(&workspace.store.sessions()?, cli.json)?,
+            SessionsCommand::Show { id } => { let session = workspace.store.session(&id)?; let runs = workspace.store.runs()?.into_iter().filter(|run| run.session == id).collect::<Vec<_>>(); output(&json!({"session": session, "runs": runs}), cli.json)?; }
+        },
+        CliCommand::Runs { command } => match command {
+            RunsCommand::List => output(&workspace.store.runs()?, cli.json)?,
+            RunsCommand::Show { id } => output(&workspace.store.run(&id)?, cli.json)?,
+            RunsCommand::Events { id, after } => output(&workspace.store.events(&id, after, 1000)?, cli.json)?,
+        },
+        CliCommand::Memory { command } => match command {
+            MemoryCommand::Remember { note, session } => { workspace.remember_note(&session, &note)?; output(&json!({"remembered": true, "session": session}), cli.json)?; }
+            MemoryCommand::Search { query, session, limit } => { let memory = Memory::open_readonly(workspace.memory_path(&session)?)?; output(&memory.search(&query, limit.min(100)), cli.json)?; }
+            MemoryCommand::Show { session } => { let memory = Memory::open_readonly(workspace.memory_path(&session)?)?; output(&json!({"events": memory.short_term, "logs": memory.long_term}), cli.json)?; }
+        },
+        CliCommand::Jobs { command } => {
+            let jobs = Jobs { workspace: workspace.clone() };
+            match command {
+                JobsCommand::Add { args, session, after, every, timeout } => {
+                    let isolated = session.is_none();
+                    let mut request = request(args, session.unwrap_or_else(|| "main".into()));
+                    request.timeout = timeout.map(|timeout| humantime::format_duration(timeout).to_string());
+                    let delay = u64::try_from(after.unwrap_or_default().as_millis())?;
+                    let due = now_millis().checked_add(delay).context("job deadline overflow")?;
+                    output(&jobs.add(request, due, every, isolated)?, cli.json)?;
                 }
-                println!(
-                    "next_action={}",
-                    if result.status.is_stopped() {
-                        "stop_execution"
-                    } else {
-                        result
-                            .report
-                            .as_ref()
-                            .map(|report| report.next_action.as_str())
-                            .unwrap_or("idle")
+                JobsCommand::List => output(&jobs.list()?, cli.json)?,
+                JobsCommand::Show { id } => output(&jobs.get(&id)?, cli.json)?,
+                JobsCommand::Cancel { id } => output(&jobs.cancel(&id)?, cli.json)?,
+                JobsCommand::Run { limit } => {
+                    if limit == 0 || limit > 1000 { bail!("job limit must be between 1 and 1000"); }
+                    let shutdown = ExecutionControl::default(); signal_control(&shutdown)?;
+                    let _lease = jobs.runner_lease()?;
+                    jobs.recover_interrupted()?;
+                    let mut outcomes = Vec::new();
+                    let mut processed = Vec::new();
+                    for _ in 0..limit {
+                        if shutdown.stop_reason().is_some() { break; }
+                        let Some(job) = jobs.claim_due_excluding(now_millis(), &processed)? else { break; };
+                        processed.push(job.id.clone());
+                        outcomes.push(jobs.execute(job, &shutdown, None)?);
                     }
-                );
-                println!("last_pose={}", result.backend_state.last_pose);
-                println!(
-                    "held_object={}",
-                    result
-                        .backend_state
-                        .held_object
-                        .as_deref()
-                        .unwrap_or("none")
-                );
+                    let failed = outcomes.iter().any(|job| job.last_run_status.as_deref() != Some("completed"));
+                    output(&outcomes, cli.json)?;
+                    if shutdown.stop_reason().is_some() { return Ok(ExitCode::from(130)); }
+                    if failed { return Ok(ExitCode::FAILURE); }
+                }
             }
-            return Ok(match result.status {
-                ExecutionStatus::Completed => ExitCode::SUCCESS,
-                ExecutionStatus::Failed => ExitCode::FAILURE,
-                ExecutionStatus::TimedOut => ExitCode::from(124),
-                ExecutionStatus::Cancelled => ExitCode::from(130),
-            });
         }
+        CliCommand::Gateway { command: GatewayCommand::Serve { bind } } => {
+            let token = std::env::var("ROBOCLAW_GATEWAY_TOKEN").context("set ROBOCLAW_GATEWAY_TOKEN to start the gateway")?;
+            let shutdown = ExecutionControl::default(); signal_control(&shutdown)?;
+            roboclaw_rs::server::serve(workspace, bind, token, shutdown)?;
+        }
+        CliCommand::Doctor => unreachable!(),
     }
     Ok(ExitCode::SUCCESS)
 }
-
+fn exit_status(status: ExecutionStatus) -> ExitCode {
+    match status {
+        ExecutionStatus::Completed => ExitCode::SUCCESS,
+        ExecutionStatus::Failed => ExitCode::FAILURE,
+        ExecutionStatus::TimedOut => ExitCode::from(124),
+        ExecutionStatus::Cancelled => ExitCode::from(130),
+    }
+}
+fn print_run(result: &RunOutput) {
+    let execution = &result.execution;
+    println!("run_id={}", result.run_id);
+    println!("session={}", result.session);
+    println!("status={}", execution.status.as_str());
+    println!(
+        "completed={}",
+        execution.status == ExecutionStatus::Completed
+    );
+    println!("execution_attempts={}", execution.reports.len());
+    println!("replans={}", execution.replans);
+    if let Some(report) = &execution.report {
+        println!("planner_provider={}", report.planner_provider);
+        println!("selected_skill={}", report.skill.name);
+        println!(
+            "failed_step={}",
+            report.failed_step.as_deref().unwrap_or("none")
+        );
+    }
+    println!(
+        "next_action={}",
+        if execution.status.is_stopped() {
+            "stop_execution"
+        } else {
+            execution
+                .report
+                .as_ref()
+                .map(|report| report.next_action.as_str())
+                .unwrap_or("idle")
+        }
+    );
+    println!("last_pose={}", execution.backend_state.last_pose);
+    println!(
+        "held_object={}",
+        execution
+            .backend_state
+            .held_object
+            .as_deref()
+            .unwrap_or("none")
+    );
+}
+fn output(value: &impl Serialize, json: bool) -> Result<()> {
+    if json {
+        print_json(value)
+    } else {
+        println!("{}", serde_json::to_string_pretty(value)?);
+        Ok(())
+    }
+}
 fn print_json(value: &impl Serialize) -> Result<()> {
     let mut stdout = io::stdout().lock();
     serde_json::to_writer_pretty(&mut stdout, value)?;
     writeln!(stdout)?;
+    Ok(())
+}
+fn print_line(value: &impl Serialize) -> Result<()> {
+    let mut stdout = io::stdout().lock();
+    serde_json::to_writer(&mut stdout, value)?;
+    writeln!(stdout)?;
+    stdout.flush()?;
     Ok(())
 }

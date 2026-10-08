@@ -11,6 +11,9 @@ use std::fs;
 use std::path::Path;
 use std::time::Duration;
 
+mod fallback;
+pub use fallback::{EnvPlanner, FallbackPlanner, ProviderPlanner};
+
 pub trait Planner: Send + Sync {
     fn plan(&self, instruction: String, catalog: &SkillCatalog) -> Result<PlanDecision>;
 
@@ -577,6 +580,10 @@ impl Executor {
             .execute_with_control(&step.tool, step.input.clone(), control)
     }
 
+    pub fn validate_step(&self, step: &SkillStep) -> Result<()> {
+        self.registry.validate(&step.tool, &step.input)
+    }
+
     pub fn available_tools(&self) -> Vec<String> {
         self.registry.tool_names()
     }
@@ -873,6 +880,15 @@ impl Agent {
             }),
         )?;
 
+        // Preflight the entire selected suffix before issuing its first operation.
+        for step in skill.steps.iter().skip(start_step_index) {
+            if control.stop_reason().is_some() {
+                break;
+            }
+            self.executor
+                .validate_step(step)
+                .with_context(|| format!("invalid step '{}'", step.name))?;
+        }
         let mut steps = Vec::new();
         let mut status = ExecutionStatus::Completed;
         let mut failed_step = None;

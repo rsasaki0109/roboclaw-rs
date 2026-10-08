@@ -33,6 +33,10 @@ anyhow.workspace = true
 clap = { version = "4.5", features = ["derive"] }
 ctrlc = "3.4"
 humantime = "2.1"
+fs2 = "0.4"
+tiny_http = "0.12"
+uuid = { version = "1.11", features = ["v4"] }
+serde_yaml.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 roboclaw_agent = { package = "roboclaw-agent", path = "crates/agent" }
@@ -46,3 +50,6 @@ roboclaw_tools = { package = "roboclaw-tools", path = "crates/tools" }
 [features]
 default = []
 ros2 = ["roboclaw_gateway/ros2"]
+
+[dev-dependencies]
+reqwest.workspace = true

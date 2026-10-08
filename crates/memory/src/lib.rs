@@ -2,7 +2,10 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -19,11 +22,64 @@ pub struct Log {
     pub body: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Memory {
     pub short_term: Vec<Event>,
     pub long_term: Vec<Log>,
     storage_dir: PathBuf,
+    observer: Option<EventObserver>,
+}
+
+pub type EventObserver = Arc<dyn Fn(&Event) -> Result<()> + Send + Sync>;
+
+impl std::fmt::Debug for Memory {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Memory")
+            .field("storage_dir", &self.storage_dir)
+            .field("short_term", &self.short_term)
+            .field("long_term", &self.long_term)
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryHit {
+    pub source: String,
+    pub timestamp: String,
+    pub text: String,
+    pub score: usize,
+}
+
+/// Publish a fully synced file through an atomic rename in the same directory.
+pub fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(parent)?;
+    let temporary = parent.join(format!(
+        ".roboclaw-{}-{}-{}.tmp",
+        std::process::id(),
+        timestamp(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    let write = (|| -> Result<()> {
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        fs::rename(&temporary, path)?;
+        #[cfg(unix)]
+        fs::File::open(parent)?.sync_all()?;
+        Ok(())
+    })();
+    if write.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    write.with_context(|| format!("failed to atomically write {:?}", path))
 }
 
 impl Memory {
@@ -39,7 +95,68 @@ impl Memory {
             short_term,
             long_term,
             storage_dir,
+            observer: None,
         })
+    }
+
+    pub fn open_readonly(storage_dir: impl AsRef<Path>) -> Result<Self> {
+        let storage_dir = storage_dir.as_ref().to_path_buf();
+        Ok(Self {
+            short_term: Self::load_short_term(&storage_dir)?,
+            long_term: Self::load_long_term(&storage_dir)?,
+            storage_dir,
+            observer: None,
+        })
+    }
+
+    pub fn with_observer(mut self, observer: EventObserver) -> Self {
+        self.observer = Some(observer);
+        self
+    }
+
+    /// Deterministic local keyword search; no model calls or embeddings required.
+    pub fn search(&self, query: &str, limit: usize) -> Vec<MemoryHit> {
+        let query = query.trim().to_lowercase();
+        let tokens: Vec<_> = query.split_whitespace().collect();
+        if tokens.is_empty() {
+            return Vec::new();
+        }
+        let candidates = self
+            .short_term
+            .iter()
+            .map(|event| MemoryHit {
+                source: "event".to_string(),
+                timestamp: event.timestamp.clone(),
+                text: format!("{} {}", event.kind, event.payload),
+                score: 0,
+            })
+            .chain(self.long_term.iter().map(|log| MemoryHit {
+                source: "log".to_string(),
+                timestamp: log.timestamp.clone(),
+                text: format!("{}\n{}", log.title, log.body),
+                score: 0,
+            }));
+        let mut hits: Vec<_> = candidates
+            .enumerate()
+            .filter_map(|(index, mut hit)| {
+                let text = hit.text.to_lowercase();
+                hit.score = tokens.iter().filter(|token| text.contains(**token)).count();
+                if hit.score == 0 {
+                    return None;
+                }
+                if text.contains(&query) {
+                    hit.score += 2;
+                }
+                Some((index, hit))
+            })
+            .collect();
+        hits.sort_by(|(a_index, a), (b_index, b)| {
+            b.score
+                .cmp(&a.score)
+                .then_with(|| b.timestamp.cmp(&a.timestamp))
+                .then_with(|| b_index.cmp(a_index))
+        });
+        hits.into_iter().take(limit).map(|(_, hit)| hit).collect()
     }
 
     pub fn remember_event(&mut self, kind: impl Into<String>, payload: Value) -> Result<()> {
@@ -48,7 +165,11 @@ impl Memory {
             kind: kind.into(),
             payload,
         });
-        self.persist_short_term()
+        self.persist_short_term()?;
+        if let Some(observer) = &self.observer {
+            observer(self.short_term.last().unwrap())?;
+        }
+        Ok(())
     }
 
     pub fn remember_log(
@@ -101,7 +222,7 @@ impl Memory {
     fn persist_short_term(&self) -> Result<()> {
         let path = Self::short_term_path(&self.storage_dir);
         let content = serde_json::to_string_pretty(&self.short_term)?;
-        fs::write(&path, content).with_context(|| format!("failed to write {:?}", path))
+        atomic_write(&path, content.as_bytes())
     }
 
     fn persist_long_term(&self) -> Result<()> {
@@ -113,7 +234,7 @@ impl Memory {
                 log.timestamp, log.title, log.body
             ));
         }
-        fs::write(&path, content).with_context(|| format!("failed to write {:?}", path))
+        atomic_write(&path, content.as_bytes())
     }
 }
 
