@@ -48,7 +48,21 @@ jobs:
         run: cargo build --locked --workspace --all-targets
 
       - name: Test workspace
-        run: cargo test --locked --workspace --all-targets
+        run: |
+          test_log="$RUNNER_TEMP/roboclaw-tests.log"
+          if cargo test --locked --workspace --all-targets > "$test_log" 2>&1; then
+            cat "$test_log"
+          else
+            cat "$test_log"
+            python3 - "$test_log" <<'PY'
+          import pathlib, sys
+          output = pathlib.Path(sys.argv[1]).read_text()
+          failure = output.split('\nfailures:\n', 1)[-1][:9000]
+          escaped = failure.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+          print('::error title=Workspace test failure::' + escaped)
+          PY
+            exit 1
+          fi
 
       - name: Check mock demo
         run: bash scripts/check_mock_demo.sh
