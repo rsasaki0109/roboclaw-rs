@@ -324,6 +324,71 @@ fn gateway_accepts_calendar_jobs_and_rejects_conflicting_or_invalid_schedules() 
 }
 
 #[test]
+fn gateway_delivers_in_background_and_keeps_robot_jobs_independent() {
+    use std::sync::mpsc;
+    use tiny_http::{Response, Server};
+    let project = Project::new();
+    let receiver = Server::http("127.0.0.1:0").unwrap();
+    project.config(&format!(
+        "webhook:\n  url: http://{}/notify\n  timeout: 30s\n",
+        receiver.server_addr()
+    ));
+    let gateway = Gateway::start(&project, &[]);
+    let (started_tx, started_rx) = mpsc::channel();
+    let (release_tx, release_rx) = mpsc::channel();
+    let worker = std::thread::spawn(move || {
+        let mut request = receiver
+            .recv_timeout(Duration::from_secs(10))
+            .unwrap()
+            .unwrap();
+        let payload: Value = serde_json::from_reader(request.as_reader()).unwrap();
+        started_tx.send(payload).unwrap();
+        release_rx.recv_timeout(Duration::from_secs(15)).unwrap();
+        request.respond(Response::empty(200)).unwrap();
+        if let Some(request) = receiver.recv_timeout(Duration::from_secs(5)).unwrap() {
+            request.respond(Response::empty(200)).unwrap();
+        }
+    });
+    let first = gateway.post("jobs", json!({"request":{"instruction":"wave_arm"}}));
+    let completed = gateway.wait_job(first["id"].as_str().unwrap(), "completed");
+    let payload = started_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+    assert_eq!(payload["run_id"], completed["run_id"]);
+    assert_eq!(payload["status"], "completed");
+    // Hold the HTTP acknowledgement while another robot job finishes.
+    let second = gateway.post("jobs", json!({"request":{"instruction":"pick and place"}}));
+    let second_result = gateway.wait_job(second["id"].as_str().unwrap(), "completed");
+    assert_eq!(
+        second_result["result"]["backend_state"]["last_pose"],
+        "bin_a"
+    );
+    let id = payload["delivery_id"].as_str().unwrap();
+    assert_eq!(gateway.get(&format!("webhooks/{id}"))["status"], "sending");
+    release_tx.send(()).unwrap();
+    let started = Instant::now();
+    loop {
+        let deliveries = gateway.get("webhooks");
+        if deliveries
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|delivery| delivery["status"] == "delivered")
+        {
+            assert_eq!(deliveries.as_array().unwrap().len(), 2);
+            break;
+        }
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "notifications did not finish: {deliveries}"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(gateway.get("runs").as_array().unwrap().len(), 2);
+    worker.join().unwrap();
+    #[cfg(unix)]
+    gateway.shutdown();
+}
+
+#[test]
 fn running_job_cancellation_survives_a_blocking_model_request() {
     use std::io::{Read, Write};
     use std::sync::mpsc;

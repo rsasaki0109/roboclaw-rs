@@ -42,6 +42,7 @@ uuid = { version = "1.11", features = ["v4"] }
 serde_yaml.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+reqwest.workspace = true
 roboclaw_agent = { package = "roboclaw-agent", path = "crates/agent" }
 roboclaw_gateway = { package = "roboclaw-gateway", path = "crates/gateway" }
 roboclaw_memory = { package = "roboclaw-memory", path = "crates/memory" }
@@ -53,6 +54,3 @@ roboclaw_tools = { package = "roboclaw-tools", path = "crates/tools" }
 [features]
 default = []
 ros2 = ["roboclaw_gateway/ros2"]
-
-[dev-dependencies]
-reqwest.workspace = true

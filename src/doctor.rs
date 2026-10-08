@@ -95,6 +95,37 @@ pub fn inspect(workspace: &Workspace) -> DoctorReport {
         .list()
         .map(|jobs| format!("{} stored jobs", jobs.len())),
     );
+    if let Some(config) = &workspace.config.webhook {
+        check(
+            "webhook_credentials",
+            config
+                .authorization()
+                .map(|_| "credential configuration is ready; endpoint is not contacted".into()),
+        );
+        check(
+            "webhook_deliveries",
+            crate::webhooks::Webhooks {
+                workspace: workspace.clone(),
+            }
+            .list()
+            .map(|deliveries| {
+                format!(
+                    "{} deliveries; {} pending; {} failed",
+                    deliveries.len(),
+                    deliveries
+                        .iter()
+                        .filter(
+                            |delivery| delivery.status == "pending" || delivery.status == "sending"
+                        )
+                        .count(),
+                    deliveries
+                        .iter()
+                        .filter(|delivery| delivery.status == "failed")
+                        .count()
+                )
+            }),
+        );
+    }
     let names = std::iter::once(workspace.config.planner.provider.as_str()).chain(
         workspace
             .config

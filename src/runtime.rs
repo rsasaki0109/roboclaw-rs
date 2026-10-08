@@ -347,6 +347,7 @@ impl Workspace {
             finished_at: None,
             result: None,
             error: None,
+            webhook: self.config.webhook.is_some(),
         };
         write_json(&record_path, &record)?;
         let session_path = session_dir.join("session.json");
