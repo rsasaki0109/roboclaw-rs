@@ -1,6 +1,7 @@
 use anyhow::{bail, Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use roboclaw_rs::agent::ExecutionStatus;
+use roboclaw_rs::challenges::{ChallengeRequest, Challenges, Scenario, Strategy};
 use roboclaw_rs::config::{parse_duration, Config, BUILTIN_TOOLS};
 use roboclaw_rs::jobs::Jobs;
 use roboclaw_rs::memory::{atomic_write, EventObserver, Memory};
@@ -39,6 +40,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum CliCommand {
+    /// Compare recovery strategies in isolated, deterministic simulations.
+    Challenges {
+        #[command(subcommand)]
+        command: ChallengesCommand,
+    },
     /// Inspect and validate YAML skills.
     Skills {
         #[command(subcommand)]
@@ -219,6 +225,66 @@ enum WebhooksCommand {
     },
 }
 
+#[derive(Subcommand)]
+enum ChallengesCommand {
+    Scenarios,
+    /// Queue a comparison for the gateway runner.
+    Submit(ChallengeArgs),
+    /// Run a comparison now; requires that no gateway runner is active.
+    Run(ChallengeArgs),
+    List,
+    Show {
+        id: String,
+    },
+    Cancel {
+        id: String,
+    },
+}
+#[derive(Args)]
+struct ChallengeArgs {
+    #[arg(
+        long = "scenario",
+        value_enum,
+        value_delimiter = ',',
+        default_value = "baseline,sensor-glitch,sensor-outage,grasp-stall"
+    )]
+    scenarios: Vec<Scenario>,
+    /// Explicit providers only; no automatic fallback. Remote providers may incur costs.
+    #[arg(
+        long = "provider",
+        value_enum,
+        value_delimiter = ',',
+        default_value = "mock"
+    )]
+    providers: Vec<Provider>,
+    #[arg(
+        long = "strategy",
+        value_enum,
+        value_delimiter = ',',
+        default_value = "retry-only,recovery"
+    )]
+    strategies: Vec<Strategy>,
+    #[arg(long, default_value_t = 3)]
+    repeats: usize,
+    #[arg(long, value_parser = parse_timeout, default_value = "5s")]
+    timeout: Duration,
+}
+impl ChallengeArgs {
+    fn request(self) -> ChallengeRequest {
+        ChallengeRequest {
+            scenarios: self.scenarios,
+            providers: self
+                .providers
+                .into_iter()
+                .map(|provider| provider.name().into())
+                .collect(),
+            strategies: self.strategies,
+            repeats: self.repeats,
+            timeout: humantime::format_duration(self.timeout).to_string(),
+        }
+    }
+}
+
 #[derive(Args)]
 struct InstructionArgs {
     #[arg(value_parser = parse_instruction)]
@@ -340,6 +406,27 @@ fn execute(cli: Cli) -> Result<ExitCode> {
     }
     let workspace = Workspace::load(&cli.project_dir, cli.config.as_deref())?;
     match cli.command {
+        CliCommand::Challenges { command } => {
+            let challenges = Challenges { workspace: workspace.clone() };
+            match command {
+                ChallengesCommand::Scenarios => output(&roboclaw_rs::challenges::scenarios(), cli.json)?,
+                ChallengesCommand::List => output(&challenges.list()?, cli.json)?,
+                ChallengesCommand::Show { id } => output(&challenges.get(&id)?.report(), cli.json)?,
+                ChallengesCommand::Cancel { id } => output(&challenges.cancel(&id)?, cli.json)?,
+                ChallengesCommand::Submit(args) => output(&challenges.create(args.request())?, cli.json)?,
+                ChallengesCommand::Run(args) => {
+                    let jobs = Jobs { workspace: workspace.clone() };
+                    let _runner_lease = jobs.runner_lease()?;
+                    jobs.recover_interrupted()?;
+                    challenges.recover_interrupted()?;
+                    let shutdown = ExecutionControl::default(); signal_control(&shutdown)?;
+                    let queued = challenges.create(args.request())?;
+                    let result = challenges.execute(challenges.claim(&queued.id)?, &shutdown)?;
+                    output(&result.report(), cli.json)?;
+                    if result.status == "cancelled" { return Ok(ExitCode::from(130)); }
+                }
+            }
+        }
         CliCommand::Skills { command } => {
             let catalog = workspace.catalog()?;
             match command {
@@ -418,6 +505,7 @@ fn execute(cli: Cli) -> Result<ExitCode> {
                     let shutdown = ExecutionControl::default(); signal_control(&shutdown)?;
                     let _lease = jobs.runner_lease()?;
                     jobs.recover_interrupted()?;
+                    Challenges { workspace: workspace.clone() }.recover_interrupted()?;
                     let mut outcomes = Vec::new();
                     let mut processed = Vec::new();
                     for _ in 0..limit {

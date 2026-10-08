@@ -6,6 +6,7 @@ pub use roboclaw_sim as sim;
 pub use roboclaw_skills as skills;
 pub use roboclaw_tools as tools;
 
+pub mod challenges;
 pub mod config;
 pub mod jobs;
 pub mod runtime;

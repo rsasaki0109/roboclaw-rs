@@ -4,6 +4,21 @@
 <section><h2>Connect</h2><form id="connect"><label>Gateway token<input id="token" type="password" autocomplete="off" required placeholder="ROBOCLAW_GATEWAY_TOKEN"></label><button>Connect</button></form><p id="connection" role="status">Disconnected</p></section>
 <section><h2>Task</h2><form id="task"><label>Session<input id="session" value="lab" required pattern="[A-Za-z0-9_-]{1,64}"></label><label>Instruction<textarea id="instruction" rows="3" required>Pick up the red cube and place it in bin_a.</textarea></label><div class="actions"><button name="action" value="plan">Preview plan</button><button name="action" value="run">Run in simulator</button></div><details><summary>Schedule a recurring task</summary><div class="schedule"><p>Run at set times while this gateway is active. The example runs at 9 am on weekdays. Failed runs stop the schedule.</p><label>Cron (minute, hour, day of month, month, weekday)<input id="cron" value="0 9 * * MON-FRI" maxlength="256"></label><label>Timezone<input id="timezone" value="UTC" placeholder="Asia/Tokyo" maxlength="64"></label><button name="action" value="schedule">Schedule in simulator</button></div></details></form><div id="plan" aria-live="polite"></div></section>
 <section><h2>Jobs</h2><p>Tasks execute one at a time. Select a job to inspect its events.</p><div id="jobs"></div></section>
+<section><h2>Recovery challenge</h2><p>Can your skills recover and place the red cube in bin_a? Compare retries with recovery skills using the same simulated faults. Each trial starts with a fresh robot.</p>
+<form id="challenge-form">
+<fieldset><legend>Scenarios</legend><div class="choices">
+<label><input type="checkbox" name="scenario" value="baseline" checked>Clean run</label>
+<label><input type="checkbox" name="scenario" value="sensor-glitch" checked>One missed observation</label>
+<label><input type="checkbox" name="scenario" value="sensor-outage" checked>Two missed observations</label>
+<label><input type="checkbox" name="scenario" value="grasp-stall" checked>Two stalled grasps</label>
+<label><input type="checkbox" name="scenario" value="persistent-stall">Every grasp stalls</label>
+<label><input type="checkbox" name="scenario" value="sensor-timeout">Sensor wait: stop before motion</label>
+</div></fieldset>
+<fieldset><legend>Strategies</legend><div class="choices"><label><input type="checkbox" name="strategy" value="retry-only" checked>Skill retries only</label><label><input type="checkbox" name="strategy" value="recovery" checked>Retries + one recovery replan</label></div></fieldset>
+<fieldset><legend>Planners</legend><div class="choices"><label><input type="checkbox" name="provider" value="mock" checked>Mock</label><label><input type="checkbox" name="provider" value="local">Local</label><label><input type="checkbox" name="provider" value="openai">OpenAI</label><label><input type="checkbox" name="provider" value="claude">Claude</label></div><p>Remote planners use your configured credentials and may incur costs. There is no fallback between providers.</p></fieldset>
+<div class="challenge-options"><label>Repeats per case<input id="challenge-repeats" type="number" min="1" max="10" value="3" required></label><label>Budget per trial (up to 60s)<input id="challenge-timeout" value="5s" required></label></div>
+<button id="challenge-start">Start comparison</button></form><p>Comparisons and jobs share one runner. A comparison finishes before the next job starts. Success rates include every planned trial.</p>
+<div id="challenges"></div><div id="challenge-results" aria-live="polite"></div></section>
 <section><h2>Live events</h2><p id="selected">Select a job</p><pre id="events" aria-live="polite"></pre></section>
 <section><h2>Notifications</h2><p>Run results sent to your configured webhook. Delivery retries do not repeat robot tasks.</p><div id="webhooks"></div></section>
 <section><h2>Skills &amp; workspace health</h2><button id="inspect">Inspect workspace</button><div id="health"></div></section>

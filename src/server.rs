@@ -1,3 +1,4 @@
+use crate::challenges::Challenges;
 use crate::config::parse_duration;
 use crate::jobs::Jobs;
 use crate::memory::Memory;
@@ -52,6 +53,10 @@ pub fn serve(
     };
     let _runner_lease = jobs.runner_lease()?;
     jobs.recover_interrupted()?;
+    let challenges = Challenges {
+        workspace: workspace.clone(),
+    };
+    challenges.recover_interrupted()?;
     let server = Arc::new(
         Server::http(address).map_err(|error| anyhow!("failed to bind gateway: {error}"))?,
     );
@@ -87,6 +92,8 @@ pub fn serve(
             while shutdown.stop_reason().is_none() {
                 if let Some(job) = jobs.claim_due(now_millis())? {
                     jobs.execute(job, &shutdown, None)?;
+                } else if let Some(challenge) = challenges.claim_next()? {
+                    challenges.execute(challenge, &shutdown)?;
                 } else {
                     let _ = shutdown.wait(Duration::from_millis(100));
                 }
@@ -209,7 +216,28 @@ fn api(request: &mut Request, workspace: &Workspace, url: &str) -> Result<(u16, 
     let jobs = Jobs {
         workspace: workspace.clone(),
     };
+    let challenges = Challenges {
+        workspace: workspace.clone(),
+    };
     let value = match (request.method(), parts.as_slice()) {
+        (&Method::Get, ["api", "challenges", "scenarios"]) => crate::challenges::scenarios(),
+        (&Method::Get, ["api", "challenges"]) => serde_json::to_value(challenges.list()?)?,
+        (&Method::Get, ["api", "challenges", id]) => challenges.get(id)?.report(),
+        (&Method::Post, ["api", "challenges"]) => {
+            let input: Value = body(request)?;
+            if !input.is_object() {
+                bail!("challenge submission must be a JSON object");
+            }
+            let challenge = challenges.create(serde_json::from_value(input)?)?;
+            return Ok((202, serde_json::to_value(challenge)?));
+        }
+        (&Method::Post, ["api", "challenges", id, "cancel"]) => {
+            let input: Value = body(request)?;
+            if !input.as_object().is_some_and(|object| object.is_empty()) {
+                bail!("challenge cancellation requires an empty JSON object");
+            }
+            serde_json::to_value(challenges.cancel(id)?)?
+        }
         (&Method::Get, ["api", "health"]) => {
             json!({"status": "ok", "backend": "in-process simulator", "version": env!("CARGO_PKG_VERSION")})
         }

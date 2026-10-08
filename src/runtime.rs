@@ -322,6 +322,28 @@ impl Workspace {
         memory_override: Option<&Path>,
         id: Option<&str>,
     ) -> Result<RunOutput> {
+        self.run_internal(request, control, observer, memory_override, id, None)
+    }
+
+    pub(crate) fn run_trial(
+        &self,
+        request: RunRequest,
+        control: &ExecutionControl,
+        id: &str,
+        faults: &crate::challenges::FaultInjection,
+    ) -> Result<RunOutput> {
+        self.run_internal(request, control, None, None, Some(id), Some(faults))
+    }
+
+    fn run_internal(
+        &self,
+        request: RunRequest,
+        control: &ExecutionControl,
+        observer: Option<EventObserver>,
+        memory_override: Option<&Path>,
+        id: Option<&str>,
+        faults: Option<&crate::challenges::FaultInjection>,
+    ) -> Result<RunOutput> {
         let request = self.prepare_request(request)?;
         let session_dir = self.store.session_dir(&request.session)?;
         let _session_lease = Lease::acquire(&session_dir.join(".session.lock"))?;
@@ -405,12 +427,21 @@ impl Workspace {
                     .collect::<Vec<_>>(),
             )?;
             let planner = self.planner(&request)?;
-            let ros2 = Ros2Bridge::from_env("roboclaw_runtime")?;
+            let ros2 = if faults.is_some() {
+                Ros2Bridge::mock("roboclaw_challenge")
+            } else {
+                Ros2Bridge::from_env("roboclaw_runtime")?
+            };
             let backend: Arc<dyn RobotBackend> = Arc::new(GazeboBackend::with_ros2(ros2.clone()));
-            let mut registry = ToolRegistry::new().with_policy(self.config.tools.clone());
-            registry.register_tool(SensorTool::default());
-            registry.register_tool(SimulatorTool::new(backend.clone()));
-            registry.register_tool(MotorControlTool::new(backend.clone()));
+            let registry = if let Some(faults) = faults {
+                faults.registry(backend.clone(), self.config.tools.clone())
+            } else {
+                let mut registry = ToolRegistry::new().with_policy(self.config.tools.clone());
+                registry.register_tool(SensorTool::default());
+                registry.register_tool(SimulatorTool::new(backend.clone()));
+                registry.register_tool(MotorControlTool::new(backend.clone()));
+                registry
+            };
             let agent = Agent::new(memory, planner, Executor::new(registry));
             let mut gateway = RoboclawGateway::with_max_replans(
                 agent,

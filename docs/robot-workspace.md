@@ -253,3 +253,11 @@ status and backend state. The gateway sends notifications in a separate worker;
 notification retries never repeat robot tasks. Use `webhooks list`,
 `webhooks show RUN_ID`, `webhooks retry RUN_ID` and `webhooks dispatch` for
 inspection, failure recovery and manual delivery.
+
+## Recovery challenges
+
+Compare skill retries with recovery replanning under deterministic simulated
+faults using `roboclaw challenges run --json` or the dashboard’s Recovery challenge
+section. Results persist with per-trial event traces. See the
+[challenge guide](recovery-challenges.md) for scoring, isolation, CLI commands,
+and API endpoints.
