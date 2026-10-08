@@ -1,5 +1,7 @@
-use anyhow::Result;
-use roboclaw_agent::{Agent, AgentReport, StepStatus};
+use anyhow::{anyhow, Result};
+use roboclaw_agent::{
+    Agent, AgentReport, ExecutionControl, ExecutionStatus, StepStatus, StopReason,
+};
 use roboclaw_ros2::{
     RoboclawActionMessage, Ros2Bridge, CMD_VEL_TOPIC, JOINT_STATES_TOPIC, ROBOCLAW_ACTION_TOPIC,
     ROBOCLAW_STATE_TOPIC,
@@ -13,6 +15,17 @@ use std::sync::Arc;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GatewayRunResult {
     pub report: AgentReport,
+    pub reports: Vec<AgentReport>,
+    pub backend_state: RobotState,
+    pub replans: usize,
+    pub topics: Vec<String>,
+}
+
+/// Outcome of a controlled run. No report exists if planning was interrupted.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GatewayExecutionResult {
+    pub status: ExecutionStatus,
+    pub report: Option<AgentReport>,
     pub reports: Vec<AgentReport>,
     pub backend_state: RobotState,
     pub replans: usize,
@@ -60,6 +73,25 @@ impl RoboclawGateway {
     }
 
     pub fn handle_instruction(&mut self, instruction: &str) -> Result<GatewayRunResult> {
+        let result =
+            self.handle_instruction_with_control(instruction, &ExecutionControl::default())?;
+        Ok(GatewayRunResult {
+            report: result
+                .report
+                .ok_or_else(|| anyhow!("execution stopped before selecting a skill"))?,
+            reports: result.reports,
+            backend_state: result.backend_state,
+            replans: result.replans,
+            topics: result.topics,
+        })
+    }
+
+    /// Uses one cancellation token and deadline for planning, retries and recovery.
+    pub fn handle_instruction_with_control(
+        &mut self,
+        instruction: &str,
+        control: &ExecutionControl,
+    ) -> Result<GatewayExecutionResult> {
         self.ros2.publish_action(&RoboclawActionMessage {
             event: "instruction_received".to_string(),
             instruction: Some(instruction.to_string()),
@@ -79,9 +111,47 @@ impl RoboclawGateway {
 
         loop {
             let execution_attempt = reports.len() + 1;
-            let decision = self
-                .agent
-                .plan_only(planning_instruction.clone(), &self.catalog)?;
+            if let Some(reason) = control.stop_reason() {
+                return self.stopped_result(
+                    instruction,
+                    reason.into(),
+                    "planning",
+                    reports,
+                    replans,
+                );
+            }
+            let decision = match self.agent.plan_only_with_control(
+                planning_instruction.clone(),
+                &self.catalog,
+                control,
+            ) {
+                Ok(decision) => decision,
+                Err(error) => {
+                    if let Some(reason) = error
+                        .downcast_ref::<StopReason>()
+                        .copied()
+                        .or_else(|| control.stop_reason())
+                    {
+                        return self.stopped_result(
+                            instruction,
+                            reason.into(),
+                            "planning",
+                            reports,
+                            replans,
+                        );
+                    }
+                    return Err(error);
+                }
+            };
+            if let Some(reason) = control.stop_reason() {
+                return self.stopped_result(
+                    instruction,
+                    reason.into(),
+                    "planning",
+                    reports,
+                    replans,
+                );
+            }
             let recovery_candidates =
                 report_recovery_candidates(&self.catalog, &reports, &planning_instruction);
             let resumed_from_step = resume_context
@@ -110,21 +180,30 @@ impl RoboclawGateway {
                 })),
             })?;
 
-            let report = if let Some(step_name) = resumed_from_step.clone() {
-                self.agent.run_with_decision_from_step(
-                    instruction.to_string(),
-                    decision,
-                    step_name,
-                )?
-            } else {
-                self.agent
-                    .run_with_decision(instruction.to_string(), decision)?
-            };
+            let report = self.agent.run_with_decision_with_control(
+                instruction,
+                decision,
+                resumed_from_step,
+                control,
+            )?;
 
             self.publish_report(&report, execution_attempt, replans)?;
 
             let backend_state = self.backend.current_state();
             reports.push(report.clone());
+            if report.status.is_stopped() {
+                self.publish_stopped(instruction, report.status)?;
+                return Ok(self.execution_result(report.status, reports, replans));
+            }
+            if let Some(reason) = control.stop_reason() {
+                return self.stopped_result(
+                    instruction,
+                    reason.into(),
+                    "between_skills",
+                    reports,
+                    replans,
+                );
+            }
 
             if report.completed
                 && report.skill.resume_original_instruction
@@ -151,18 +230,7 @@ impl RoboclawGateway {
             }
 
             if report.completed || replans >= self.max_replans {
-                return Ok(GatewayRunResult {
-                    report,
-                    reports,
-                    backend_state,
-                    replans,
-                    topics: vec![
-                        CMD_VEL_TOPIC.to_string(),
-                        JOINT_STATES_TOPIC.to_string(),
-                        ROBOCLAW_ACTION_TOPIC.to_string(),
-                        ROBOCLAW_STATE_TOPIC.to_string(),
-                    ],
-                });
+                return Ok(self.execution_result(report.status, reports, replans));
             }
 
             replans += 1;
@@ -213,6 +281,71 @@ impl RoboclawGateway {
         }
     }
 
+    fn execution_result(
+        &self,
+        status: ExecutionStatus,
+        reports: Vec<AgentReport>,
+        replans: usize,
+    ) -> GatewayExecutionResult {
+        GatewayExecutionResult {
+            status,
+            report: reports.last().cloned(),
+            reports,
+            backend_state: self.backend.current_state(),
+            replans,
+            topics: vec![
+                CMD_VEL_TOPIC,
+                JOINT_STATES_TOPIC,
+                ROBOCLAW_ACTION_TOPIC,
+                ROBOCLAW_STATE_TOPIC,
+            ]
+            .into_iter()
+            .map(str::to_string)
+            .collect(),
+        }
+    }
+
+    fn stopped_result(
+        &mut self,
+        instruction: &str,
+        status: ExecutionStatus,
+        stage: &str,
+        reports: Vec<AgentReport>,
+        replans: usize,
+    ) -> Result<GatewayExecutionResult> {
+        self.agent.memory.remember_event(
+            "execution_stopped",
+            json!({
+                "instruction": instruction, "status": status.as_str(), "stage": stage,
+                "execution_attempts": reports.len(), "replans": replans,
+            }),
+        )?;
+        self.agent.memory.remember_log("Execution stopped", format!(
+            "instruction: {instruction}\nstatus: {}\nstage: {stage}\nexecution_attempts: {}\nreplans: {replans}",
+            status.as_str(), reports.len(),
+        ))?;
+        self.publish_stopped(instruction, status)?;
+        Ok(self.execution_result(status, reports, replans))
+    }
+
+    fn publish_stopped(&self, instruction: &str, status: ExecutionStatus) -> Result<()> {
+        self.ros2.publish_action(&RoboclawActionMessage {
+            event: "execution_stopped".to_string(),
+            instruction: Some(instruction.to_string()),
+            skill: None,
+            step: None,
+            tool: None,
+            backend: Some(self.backend.name().to_string()),
+            action: None,
+            detail: Some(status.as_str().to_string()),
+            data: Some(json!({"status": status.as_str()})),
+        })?;
+        let mut state = state_to_ros2_message(&self.backend.current_state());
+        state.completed = Some(false);
+        state.next_action = Some("stop_execution".to_string());
+        self.ros2.publish_state(&state)
+    }
+
     fn publish_report(
         &self,
         report: &AgentReport,
@@ -224,6 +357,8 @@ impl RoboclawGateway {
                 event: match step.status {
                     StepStatus::Succeeded => "step_completed".to_string(),
                     StepStatus::Failed => "step_failed".to_string(),
+                    StepStatus::Cancelled => "step_cancelled".to_string(),
+                    StepStatus::TimedOut => "step_timed_out".to_string(),
                 },
                 instruction: None,
                 skill: Some(report.skill.name.clone()),
