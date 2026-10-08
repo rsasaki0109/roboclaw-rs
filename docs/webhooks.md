@@ -36,6 +36,7 @@ directory and webhook configuration active:
 roboclaw run "Wave the robot arm." --session lab --json
 roboclaw webhooks list --json
 roboclaw webhooks show RUN_ID --json
+roboclaw webhooks retry RUN_ID --json
 roboclaw webhooks dispatch --limit 100 --json
 ```
 
@@ -51,6 +52,31 @@ The authenticated `GET /api/webhooks` and `GET /api/webhooks/RUN_ID` endpoints
 return delivery state. The dashboard's **Notifications** section shows status,
 attempt count and a sanitized error. Listing and inspection are read-only and
 do not create files or send network requests.
+
+## Manually retry a failed notification
+
+After correcting the receiver, credentials or target configuration, use
+`webhooks retry RUN_ID` or the dashboard's **Retry notification** button.
+The authenticated `POST /api/webhooks/RUN_ID/retry` accepts an empty JSON object
+and returns 202 with the queued delivery. Invalid or unknown fields are rejected;
+requests for pending, sending or delivered notifications return 409. Only a
+terminal `failed` notification can be requeued. The same sender lock protects
+retry and dispatch, so retry may return 409 while a dispatcher holds the lock.
+
+Retry validates the active configuration and credentials, then queues the
+notification without making an HTTP request. A gateway picks it up automatically;
+otherwise run `webhooks dispatch`. Retry keeps the immutable payload, delivery
+ID and total `attempts`, and grants a fresh `max_attempts` budget. Each retry
+appends the previous failure's HTTP status, sanitized error, last attempt time,
+total attempts and request time to `retries`. `attempts_at_retry` records the
+start of the new budget; old delivery files without these fields default to
+zero and an empty history. Automatic backoff restarts at `retry_delay`.
+
+The dashboard displays the previous failures in **Retry history**. Failed
+attempts after a manual retry can be retried again; prior histories remain.
+As with automatic delivery, receivers must deduplicate by the same delivery ID
+if they accepted a request whose acknowledgement was lost. Robot runs and
+commands are never recreated by a notification retry.
 
 ## Payload and delivery identity
 

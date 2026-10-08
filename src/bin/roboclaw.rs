@@ -208,6 +208,10 @@ enum WebhooksCommand {
     Show {
         id: String,
     },
+    /// Requeue a failed notification; dispatch separately or keep a gateway active.
+    Retry {
+        id: String,
+    },
     /// Send due notifications once; failed HTTP requests never re-run the robot.
     Dispatch {
         #[arg(long, default_value_t = 100)]
@@ -434,6 +438,7 @@ fn execute(cli: Cli) -> Result<ExitCode> {
             match command {
                 WebhooksCommand::List => output(&webhooks.list()?, cli.json)?,
                 WebhooksCommand::Show { id } => output(&webhooks.get(&id)?, cli.json)?,
+                WebhooksCommand::Retry { id } => output(&webhooks.retry(&id)?, cli.json)?,
                 WebhooksCommand::Dispatch { limit } => {
                     let shutdown = ExecutionControl::default(); signal_control(&shutdown)?;
                     let outcomes = webhooks.dispatch(limit, &shutdown)?;
