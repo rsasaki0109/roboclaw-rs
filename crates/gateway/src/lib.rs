@@ -126,7 +126,10 @@ impl RoboclawGateway {
             let backend_state = self.backend.current_state();
             reports.push(report.clone());
 
-            if report.completed && report.skill.resume_original_instruction {
+            if report.completed
+                && report.skill.resume_original_instruction
+                && planning_instruction != instruction
+            {
                 self.ros2.publish_action(&RoboclawActionMessage {
                     event: "recovery_completed".to_string(),
                     instruction: Some(instruction.to_string()),
@@ -546,6 +549,52 @@ mod tests {
                             == Value::String("move_to_object".to_string())
                 });
         assert!(resume_marker_seen);
+    }
+
+    #[test]
+    fn direct_recovery_skill_finishes_without_resuming_itself() {
+        use roboclaw_agent::{PlanDecision, Planner};
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        struct PlanOnce {
+            decision: PlanDecision,
+            planned: AtomicBool,
+        }
+
+        impl Planner for PlanOnce {
+            fn plan(&self, _instruction: String, _catalog: &SkillCatalog) -> Result<PlanDecision> {
+                anyhow::ensure!(
+                    !self.planned.swap(true, Ordering::SeqCst),
+                    "a directly requested recovery skill must not plan again"
+                );
+                Ok(self.decision.clone())
+            }
+        }
+
+        let root = unique_test_dir("roboclaw-gateway-direct-recovery");
+        fs::create_dir_all(root.join("skills")).unwrap();
+        write_recovery_skills(&root.join("skills"));
+        let catalog = SkillCatalog::from_dir(root.join("skills")).unwrap();
+        let planner = Box::new(PlanOnce {
+            decision: PlanDecision {
+                skill: catalog.get("recover_grasp").unwrap().clone(),
+                reason: None,
+            },
+            planned: AtomicBool::new(false),
+        });
+        let memory = Memory::new(root.join("memory")).unwrap();
+        let ros2 = Ros2Bridge::mock("direct-recovery-test");
+        let backend: Arc<dyn RobotBackend> = Arc::new(GazeboBackend::with_ros2(ros2.clone()));
+        let mut registry = ToolRegistry::new();
+        registry.register_tool(SimulatorTool::new(backend.clone()));
+        registry.register_tool(SensorTool::default());
+        let agent = Agent::new(memory, planner, Executor::new(registry));
+        let mut gateway = RoboclawGateway::new(agent, catalog, ros2, backend);
+        let result = gateway.handle_instruction("recover_grasp").unwrap();
+        assert!(result.report.completed);
+        assert_eq!(result.reports.len(), 1);
+        assert_eq!(result.replans, 0);
+        fs::remove_dir_all(root).unwrap();
     }
 
     fn write_recovery_skills(skills_dir: &Path) {

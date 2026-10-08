@@ -439,6 +439,49 @@ The example:
 
 ## Development
 
+### Command-line interface
+
+Run the CLI from the repository root:
+
+```bash
+cargo run --locked --bin roboclaw -- skills list
+cargo run --locked --bin roboclaw -- plan "Pick up the red cube and place it in bin_a."
+cargo run --locked --bin roboclaw -- run "Pick up the red cube and place it in bin_a." --provider mock
+```
+
+Install a local binary if preferred:
+
+```bash
+cargo install --locked --path .
+roboclaw skills list
+roboclaw plan "Wave the robot arm." --json
+roboclaw run "Pick up the red cube and place it in bin_a." --provider mock
+```
+
+`skills list` needs only the YAML catalog. `plan` selects a skill and displays its
+steps without initializing the robot backend, ROS2 bridge, or memory storage.
+`run` uses the existing gateway with the in-process simulator, including retries
+and recovery; it does not establish a connection to a real robot or Gazebo server.
+
+| Option | Behavior |
+| --- | --- |
+| `--project-dir PATH` | Locate `skills/` and `prompts/` under PATH; defaults to the current directory. Available on all commands. |
+| `--json` | Print a JSON skill array, plan with its `decision`, or gateway execution result. Available on all commands. |
+| `--provider mock\|auto\|local\|openai\|claude` | Choose a planner for `plan` or `run`. Defaults to `mock` for offline use. `auto` honors `ROBOCLAW_LLM_PROVIDER` and existing provider discovery. |
+| `--memory-dir PATH` | Set storage for `run`; defaults to `PROJECT_DIR/target/cli-memory`. Relative overrides resolve from the current directory. |
+
+Use `--project-dir /path/to/roboclaw-rs` when running outside the repository.
+Remote and local model providers use the same environment configuration as the
+examples. `run` also honors `ROBOCLAW_ROS2_BRIDGE` and the existing transient
+failure injection variables.
+
+Exit status is `0` on success, `1` on runtime errors or incomplete execution, and
+`2` on invalid arguments. Incomplete runs still print their report (including JSON
+when requested); runtime errors are written to stderr. Use `--help` on any command
+to inspect its options.
+
+### Checks
+
 The Rust CI workflow checks formatting, builds all workspace targets, runs the
 existing tests, and verifies the offline pick-and-place demo on Rust 1.99.0.
 Run the same checks locally:
