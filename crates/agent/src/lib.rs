@@ -3,6 +3,7 @@ use reqwest::blocking::Client;
 use roboclaw_memory::Memory;
 use roboclaw_skills::{RecoveryContext, Skill, SkillCatalog, SkillStep};
 use roboclaw_tools::ToolRegistry;
+pub use roboclaw_tools::{ExecutionControl, StopReason};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::env;
@@ -12,6 +13,19 @@ use std::time::Duration;
 
 pub trait Planner: Send + Sync {
     fn plan(&self, instruction: String, catalog: &SkillCatalog) -> Result<PlanDecision>;
+
+    /// Override to support cancellation within a long planning request.
+    fn plan_with_control(
+        &self,
+        instruction: String,
+        catalog: &SkillCatalog,
+        control: &ExecutionControl,
+    ) -> Result<PlanDecision> {
+        control.check()?;
+        let decision = self.plan(instruction, catalog);
+        control.check()?;
+        decision
+    }
 
     fn provider_name(&self) -> &'static str {
         "planner"
@@ -319,8 +333,13 @@ impl Planner for FilePromptPlanner {
     }
 }
 
-impl Planner for OllamaPlanner {
-    fn plan(&self, instruction: String, catalog: &SkillCatalog) -> Result<PlanDecision> {
+impl OllamaPlanner {
+    fn plan_request(
+        &self,
+        instruction: String,
+        catalog: &SkillCatalog,
+        timeout: Duration,
+    ) -> Result<PlanDecision> {
         let selection_schema = planner_selection_schema_for_instruction(&instruction, catalog);
         let request = OllamaGenerateRequest {
             model: self.config.model.clone(),
@@ -339,6 +358,7 @@ impl Planner for OllamaPlanner {
                 "{}/api/generate",
                 self.config.host.trim_end_matches('/')
             ))
+            .timeout(timeout)
             .json(&request)
             .send()
             .context("failed to call local ollama planner")?
@@ -351,14 +371,41 @@ impl Planner for OllamaPlanner {
         let selection = parse_selection_text(&payload.response)?;
         resolve_skill_selection(catalog, selection)
     }
+}
+
+impl Planner for OllamaPlanner {
+    fn plan(&self, instruction: String, catalog: &SkillCatalog) -> Result<PlanDecision> {
+        self.plan_request(instruction, catalog, self.config.timeout)
+    }
+
+    fn plan_with_control(
+        &self,
+        instruction: String,
+        catalog: &SkillCatalog,
+        control: &ExecutionControl,
+    ) -> Result<PlanDecision> {
+        control.check()?;
+        let timeout = control
+            .remaining_time()
+            .unwrap_or(self.config.timeout)
+            .min(self.config.timeout);
+        let decision = self.plan_request(instruction, catalog, timeout);
+        control.check()?;
+        decision
+    }
 
     fn provider_name(&self) -> &'static str {
         LlmProvider::Local.as_str()
     }
 }
 
-impl Planner for OpenAiPlanner {
-    fn plan(&self, instruction: String, catalog: &SkillCatalog) -> Result<PlanDecision> {
+impl OpenAiPlanner {
+    fn plan_request(
+        &self,
+        instruction: String,
+        catalog: &SkillCatalog,
+        timeout: Duration,
+    ) -> Result<PlanDecision> {
         let selection_schema = planner_selection_schema_for_instruction(&instruction, catalog);
         let request = OpenAiResponsesRequest {
             model: self.config.model.clone(),
@@ -390,6 +437,7 @@ impl Planner for OpenAiPlanner {
                 self.config.base_url.trim_end_matches('/')
             ))
             .bearer_auth(&self.config.api_key)
+            .timeout(timeout)
             .json(&request)
             .send()
             .context("failed to call openai planner")?
@@ -401,14 +449,41 @@ impl Planner for OpenAiPlanner {
         let selection = parse_selection_text(&extract_openai_output_text(&payload)?)?;
         resolve_skill_selection(catalog, selection)
     }
+}
+
+impl Planner for OpenAiPlanner {
+    fn plan(&self, instruction: String, catalog: &SkillCatalog) -> Result<PlanDecision> {
+        self.plan_request(instruction, catalog, self.config.timeout)
+    }
+
+    fn plan_with_control(
+        &self,
+        instruction: String,
+        catalog: &SkillCatalog,
+        control: &ExecutionControl,
+    ) -> Result<PlanDecision> {
+        control.check()?;
+        let timeout = control
+            .remaining_time()
+            .unwrap_or(self.config.timeout)
+            .min(self.config.timeout);
+        let decision = self.plan_request(instruction, catalog, timeout);
+        control.check()?;
+        decision
+    }
 
     fn provider_name(&self) -> &'static str {
         LlmProvider::OpenAi.as_str()
     }
 }
 
-impl Planner for ClaudePlanner {
-    fn plan(&self, instruction: String, catalog: &SkillCatalog) -> Result<PlanDecision> {
+impl ClaudePlanner {
+    fn plan_request(
+        &self,
+        instruction: String,
+        catalog: &SkillCatalog,
+        timeout: Duration,
+    ) -> Result<PlanDecision> {
         let selection_schema = planner_selection_schema_for_instruction(&instruction, catalog);
         let request = ClaudeMessagesRequest {
             model: self.config.model.clone(),
@@ -439,6 +514,7 @@ impl Planner for ClaudePlanner {
             ))
             .header("x-api-key", &self.config.api_key)
             .header("anthropic-version", &self.config.api_version)
+            .timeout(timeout)
             .json(&request)
             .send()
             .context("failed to call claude planner")?
@@ -449,6 +525,28 @@ impl Planner for ClaudePlanner {
 
         let selection = extract_claude_tool_selection(&payload)?;
         resolve_skill_selection(catalog, selection)
+    }
+}
+
+impl Planner for ClaudePlanner {
+    fn plan(&self, instruction: String, catalog: &SkillCatalog) -> Result<PlanDecision> {
+        self.plan_request(instruction, catalog, self.config.timeout)
+    }
+
+    fn plan_with_control(
+        &self,
+        instruction: String,
+        catalog: &SkillCatalog,
+        control: &ExecutionControl,
+    ) -> Result<PlanDecision> {
+        control.check()?;
+        let timeout = control
+            .remaining_time()
+            .unwrap_or(self.config.timeout)
+            .min(self.config.timeout);
+        let decision = self.plan_request(instruction, catalog, timeout);
+        control.check()?;
+        decision
     }
 
     fn provider_name(&self) -> &'static str {
@@ -468,6 +566,15 @@ impl Executor {
 
     pub fn execute_step(&self, step: &SkillStep) -> Result<Value> {
         self.registry.execute(&step.tool, step.input.clone())
+    }
+
+    pub fn execute_step_with_control(
+        &self,
+        step: &SkillStep,
+        control: &ExecutionControl,
+    ) -> Result<Value> {
+        self.registry
+            .execute_with_control(&step.tool, step.input.clone(), control)
     }
 
     pub fn available_tools(&self) -> Vec<String> {
@@ -490,6 +597,8 @@ pub struct StepExecution {
 pub enum StepStatus {
     Succeeded,
     Failed,
+    Cancelled,
+    TimedOut,
 }
 
 impl StepStatus {
@@ -497,12 +606,48 @@ impl StepStatus {
         match self {
             StepStatus::Succeeded => "succeeded",
             StepStatus::Failed => "failed",
+            StepStatus::Cancelled => "cancelled",
+            StepStatus::TimedOut => "timed_out",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ExecutionStatus {
+    Completed,
+    Failed,
+    Cancelled,
+    TimedOut,
+}
+
+impl ExecutionStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Completed => "completed",
+            Self::Failed => "failed",
+            Self::Cancelled => "cancelled",
+            Self::TimedOut => "timed_out",
+        }
+    }
+
+    pub fn is_stopped(self) -> bool {
+        matches!(self, Self::Cancelled | Self::TimedOut)
+    }
+}
+
+impl From<StopReason> for ExecutionStatus {
+    fn from(reason: StopReason) -> Self {
+        match reason {
+            StopReason::Cancelled => Self::Cancelled,
+            StopReason::TimedOut => Self::TimedOut,
         }
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentReport {
+    pub status: ExecutionStatus,
     pub instruction: String,
     pub planner_provider: String,
     pub planner_reason: Option<String>,
@@ -648,6 +793,16 @@ impl Agent {
         self.planner.plan(instruction.into(), catalog)
     }
 
+    pub fn plan_only_with_control(
+        &self,
+        instruction: impl Into<String>,
+        catalog: &SkillCatalog,
+        control: &ExecutionControl,
+    ) -> Result<PlanDecision> {
+        self.planner
+            .plan_with_control(instruction.into(), catalog, control)
+    }
+
     pub fn run_loop(
         &mut self,
         instruction: impl Into<String>,
@@ -667,7 +822,12 @@ impl Agent {
         instruction: impl Into<String>,
         decision: PlanDecision,
     ) -> Result<AgentReport> {
-        self.run_with_decision_internal(instruction.into(), decision, None)
+        self.run_with_decision_with_control(
+            instruction,
+            decision,
+            None,
+            &ExecutionControl::default(),
+        )
     }
 
     pub fn run_with_decision_from_step(
@@ -676,15 +836,22 @@ impl Agent {
         decision: PlanDecision,
         step_name: impl Into<String>,
     ) -> Result<AgentReport> {
-        self.run_with_decision_internal(instruction.into(), decision, Some(step_name.into()))
+        self.run_with_decision_with_control(
+            instruction,
+            decision,
+            Some(step_name.into()),
+            &ExecutionControl::default(),
+        )
     }
 
-    fn run_with_decision_internal(
+    pub fn run_with_decision_with_control(
         &mut self,
-        instruction: String,
+        instruction: impl Into<String>,
         decision: PlanDecision,
         resumed_from_step: Option<String>,
+        control: &ExecutionControl,
     ) -> Result<AgentReport> {
+        let instruction = instruction.into();
         self.memory.remember_event(
             "instruction_received",
             json!({ "instruction": instruction.clone() }),
@@ -707,15 +874,23 @@ impl Agent {
         )?;
 
         let mut steps = Vec::new();
-        let mut completed = true;
+        let mut status = ExecutionStatus::Completed;
         let mut failed_step = None;
         for step in skill.steps.iter().skip(start_step_index) {
+            if let Some(reason) = control.stop_reason() {
+                status = reason.into();
+                break;
+            }
             let mut final_output = Value::Null;
             let mut final_observation = "step not executed".to_string();
             let mut final_status = StepStatus::Failed;
             let mut attempts = 0usize;
 
             for attempt in 0..=step.max_retries {
+                if let Some(reason) = control.stop_reason() {
+                    status = reason.into();
+                    break;
+                }
                 attempts = attempt + 1;
                 self.memory.remember_event(
                     "tool_invoked",
@@ -727,13 +902,36 @@ impl Agent {
                     }),
                 )?;
 
-                let output = self
-                    .executor
-                    .execute_step(step)
-                    .with_context(|| format!("step '{}' failed", step.name))?;
-
-                let evaluation = evaluate_step_output(step, &output)
-                    .with_context(|| format!("failed to validate step '{}'", step.name))?;
+                let execution = self.executor.execute_step_with_control(step, control);
+                let (output, step_status, observation) = match execution {
+                    Ok(output) => {
+                        let evaluation = evaluate_step_output(step, &output)
+                            .with_context(|| format!("failed to validate step '{}'", step.name))?;
+                        (output, evaluation.status, evaluation.detail)
+                    }
+                    Err(error) => {
+                        if let Some(reason) = error
+                            .downcast_ref::<StopReason>()
+                            .copied()
+                            .or_else(|| control.stop_reason())
+                        {
+                            status = reason.into();
+                            let step_status = match reason {
+                                StopReason::Cancelled => StepStatus::Cancelled,
+                                StopReason::TimedOut => StepStatus::TimedOut,
+                            };
+                            let observation = if error.downcast_ref::<StopReason>().is_some() {
+                                reason.to_string()
+                            } else {
+                                format!("{reason}: {error:#}")
+                            };
+                            (Value::Null, step_status, observation)
+                        } else {
+                            return Err(error)
+                                .with_context(|| format!("step '{}' failed", step.name));
+                        }
+                    }
+                };
 
                 self.memory.remember_event(
                     "step_observed",
@@ -741,26 +939,37 @@ impl Agent {
                         "step": step.name.clone(),
                         "tool": step.tool.clone(),
                         "attempt": attempts,
-                        "status": evaluation.status.as_str(),
-                        "observation": evaluation.detail,
+                        "status": step_status.as_str(),
+                        "observation": observation,
                         "output": output.clone(),
                     }),
                 )?;
 
                 self.memory.remember_event(
-                    "tool_completed",
+                    if status.is_stopped() {
+                        "tool_stopped"
+                    } else {
+                        "tool_completed"
+                    },
                     json!({
                         "step": step.name.clone(),
                         "tool": step.tool.clone(),
                         "attempt": attempts,
-                        "status": evaluation.status.as_str(),
+                        "status": step_status.as_str(),
                         "output": output.clone(),
                     }),
                 )?;
 
                 final_output = output;
-                final_observation = evaluation.detail;
-                final_status = evaluation.status;
+                final_observation = observation;
+                final_status = step_status;
+
+                if let Some(reason) = control.stop_reason() {
+                    status = reason.into();
+                }
+                if status.is_stopped() {
+                    break;
+                }
 
                 if final_status == StepStatus::Succeeded {
                     break;
@@ -780,6 +989,9 @@ impl Agent {
                 }
             }
 
+            if attempts == 0 {
+                break;
+            }
             let step_execution = StepExecution {
                 step_name: step.name.clone(),
                 tool_name: step.tool.clone(),
@@ -792,14 +1004,24 @@ impl Agent {
             let step_failed = step_execution.status == StepStatus::Failed;
             steps.push(step_execution);
 
+            if status.is_stopped() {
+                break;
+            }
             if step_failed {
-                completed = false;
+                status = ExecutionStatus::Failed;
                 failed_step = Some(step.name.clone());
                 break;
             }
         }
 
-        let next_action = if let Some(step_name) = failed_step.as_deref() {
+        // Also check empty skills and cancellation after the final synchronous call.
+        if let Some(reason) = control.stop_reason() {
+            status = reason.into();
+        }
+        let completed = status == ExecutionStatus::Completed;
+        let next_action = if status.is_stopped() {
+            "stop_execution".to_string()
+        } else if let Some(step_name) = failed_step.as_deref() {
             format!("replan_after_{step_name}")
         } else {
             steps
@@ -808,10 +1030,23 @@ impl Agent {
                 .unwrap_or_else(|| "idle".to_string())
         };
 
+        if status.is_stopped() {
+            self.memory.remember_event(
+                "execution_stopped",
+                json!({
+                    "instruction": instruction,
+                    "status": status.as_str(),
+                    "stage": "execution",
+                    "skill": skill.name,
+                    "steps_executed": steps.len(),
+                }),
+            )?;
+        }
+
         self.memory.remember_log(
             format!("Executed {}", skill.name),
             format!(
-                "instruction: {}\nprovider: {}\nreason: {}\nresumed_from_step: {}\ntools: {}\nsteps_completed: {}\ncompleted: {}\nfailed_step: {}\nnext_action: {}",
+                "instruction: {}\nprovider: {}\nreason: {}\nresumed_from_step: {}\ntools: {}\nsteps_completed: {}\ncompleted: {}\nfailed_step: {}\nnext_action: {}\nstatus: {}",
                 instruction,
                 self.planner.provider_name(),
                 planner_reason.as_deref().unwrap_or("none"),
@@ -820,11 +1055,13 @@ impl Agent {
                 steps.len(),
                 completed,
                 failed_step.as_deref().unwrap_or("none"),
-                next_action
+                next_action,
+                status.as_str(),
             ),
         )?;
 
         Ok(AgentReport {
+            status,
             instruction,
             planner_provider: self.planner.provider_name().to_string(),
             planner_reason,

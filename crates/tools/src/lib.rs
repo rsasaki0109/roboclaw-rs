@@ -6,9 +6,19 @@ use std::env;
 use std::sync::Arc;
 use std::sync::Mutex;
 
+mod control;
+pub use control::{ExecutionControl, StopReason};
+
 pub trait Tool: Send + Sync {
     fn name(&self) -> &str;
     fn execute(&self, input: Value) -> Result<Value>;
+
+    /// Override this method to check control during long operations.
+    /// The default cannot interrupt an already-running synchronous call.
+    fn execute_with_control(&self, input: Value, control: &ExecutionControl) -> Result<Value> {
+        control.check()?;
+        self.execute(input)
+    }
 }
 
 #[derive(Default, Clone)]
@@ -39,6 +49,20 @@ impl ToolRegistry {
             .cloned()
             .ok_or_else(|| anyhow!("tool '{}' is not registered", name))?;
         tool.execute(input)
+    }
+
+    pub fn execute_with_control(
+        &self,
+        name: &str,
+        input: Value,
+        control: &ExecutionControl,
+    ) -> Result<Value> {
+        control.check()?;
+        let tool = self
+            .tools
+            .get(name)
+            .ok_or_else(|| anyhow!("tool '{name}' is not registered"))?;
+        tool.execute_with_control(input, control)
     }
 
     pub fn tool_names(&self) -> Vec<String> {

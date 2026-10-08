@@ -468,6 +468,7 @@ and recovery; it does not establish a connection to a real robot or Gazebo serve
 | `--project-dir PATH` | Locate `skills/` and `prompts/` under PATH; defaults to the current directory. Available on all commands. |
 | `--json` | Print a JSON skill array, plan with its `decision`, or gateway execution result. Available on all commands. |
 | `--provider mock\|auto\|local\|openai\|claude` | Choose a planner for `plan` or `run`. Defaults to `mock` for offline use. `auto` honors `ROBOCLAW_LLM_PROVIDER` and existing provider discovery. |
+| `--timeout DURATION` | Set one positive execution budget for `run`, e.g. `30s` or `2m`, shared by planning, retries and recovery. |
 | `--memory-dir PATH` | Set storage for `run`; defaults to `PROJECT_DIR/target/cli-memory`. Relative overrides resolve from the current directory. |
 
 Use `--project-dir /path/to/roboclaw-rs` when running outside the repository.
@@ -475,10 +476,34 @@ Remote and local model providers use the same environment configuration as the
 examples. `run` also honors `ROBOCLAW_ROS2_BRIDGE` and the existing transient
 failure injection variables.
 
-Exit status is `0` on success, `1` on runtime errors or incomplete execution, and
-`2` on invalid arguments. Incomplete runs still print their report (including JSON
-when requested); runtime errors are written to stderr. Use `--help` on any command
-to inspect its options.
+Exit status is `0` on success, `1` on runtime errors or incomplete execution,
+`2` on invalid arguments, `124` on timeout, and `130` on Ctrl+C cancellation.
+Incomplete and stopped runs still print their outcome (including JSON when
+requested); runtime errors are written to stderr. Use `--help` on any command to
+inspect its options.
+
+```bash
+roboclaw run "Pick up the red cube and place it in bin_a." --timeout 30s --json
+```
+
+`run` outputs a top-level `status`: `completed`, `failed`, `cancelled`, or
+`timed_out`. Each agent report also has a status and retains `completed` for
+existing callers. If execution stops before skill selection, `report` is `null`
+and `reports` is empty. When interrupted during recovery planning, previous
+reports remain available; the top-level status describes the whole run.
+`execution_stopped` memory events and long-term logs record the reason and stage.
+Stopped runs do not retry, replan, or resume the original instruction.
+
+Cancellation is cooperative. Tools and planners can implement
+`execute_with_control` and `plan_with_control`, using a shared `ExecutionControl`
+with `check()` or `wait()`. Existing synchronous tool calls finish before the
+agent checks the token again; their real output is preserved even if the run
+stops. HTTP planners cap request timeouts to the remaining execution budget, but
+Ctrl+C is observed after a blocking HTTP call returns. This is not a hard
+wall-clock deadline or a hardware emergency stop. No detached execution worker
+is left behind when the gateway returns. Library users can call
+`handle_instruction_with_control` with a token and cancel a clone from another
+thread; existing `handle_instruction` callers continue to run without a deadline.
 
 ### Checks
 

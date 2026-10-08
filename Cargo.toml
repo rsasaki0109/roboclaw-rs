@@ -31,6 +31,8 @@ serde_yaml = "0.9"
 [dependencies]
 anyhow.workspace = true
 clap = { version = "4.5", features = ["derive"] }
+ctrlc = "3.4"
+humantime = "2.1"
 serde.workspace = true
 serde_json.workspace = true
 roboclaw_agent = { package = "roboclaw-agent", path = "crates/agent" }
