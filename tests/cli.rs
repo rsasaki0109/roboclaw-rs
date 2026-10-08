@@ -199,7 +199,14 @@ fn run_completes_pick_and_place_and_persists_memory() {
     assert!(fs::read_to_string(memory.join("long_term.md"))
         .unwrap()
         .contains("Executed pick_and_place"));
-    assert!(!project.root.join("target").exists());
+    // Run journals are independent of the explicit memory location.
+    assert!(!project.root.join("target/cli-memory").exists());
+    let record = project
+        .root
+        .join("target/roboclaw/runs")
+        .join(result["run_id"].as_str().unwrap())
+        .join("run.json");
+    assert!(record.exists());
 }
 
 #[test]

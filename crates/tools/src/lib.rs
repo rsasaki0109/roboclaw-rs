@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use roboclaw_sim::{Command, RobotBackend};
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::env;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -12,6 +12,10 @@ pub use control::{ExecutionControl, StopReason};
 pub trait Tool: Send + Sync {
     fn name(&self) -> &str;
     fn execute(&self, input: Value) -> Result<Value>;
+
+    fn validate_input(&self, _input: &Value) -> Result<()> {
+        Ok(())
+    }
 
     /// Override this method to check control during long operations.
     /// The default cannot interrupt an already-running synchronous call.
@@ -24,11 +28,66 @@ pub trait Tool: Send + Sync {
 #[derive(Default, Clone)]
 pub struct ToolRegistry {
     tools: HashMap<String, Arc<dyn Tool>>,
+    policy: ToolPolicy,
+}
+
+/// Deterministic host policy. An explicit deny always wins over allow.
+#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ToolPolicy {
+    pub allow: Option<BTreeSet<String>>,
+    pub deny: BTreeSet<String>,
+}
+
+impl ToolPolicy {
+    pub fn check(&self, name: &str) -> Result<()> {
+        if self.deny.contains(name)
+            || self
+                .allow
+                .as_ref()
+                .is_some_and(|allow| !allow.contains(name))
+        {
+            return Err(anyhow!("tool '{name}' is denied by execution policy"));
+        }
+        Ok(())
+    }
+}
+
+/// Validate built-in inputs without starting a backend or consuming failures.
+pub fn validate_builtin_input(name: &str, input: &Value) -> Result<()> {
+    match name {
+        "motor_control" | "simulator" => {
+            Command::from_input(input.clone())?;
+        }
+        "sensor" => {
+            input
+                .get("target")
+                .and_then(Value::as_str)
+                .filter(|value| !value.trim().is_empty())
+                .ok_or_else(|| anyhow!("sensor target must be a non-empty string"))?;
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 impl ToolRegistry {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn with_policy(mut self, policy: ToolPolicy) -> Self {
+        self.policy = policy;
+        self
+    }
+
+    pub fn validate(&self, name: &str, input: &Value) -> Result<()> {
+        self.policy.check(name)?;
+        let tool = self
+            .tools
+            .get(name)
+            .ok_or_else(|| anyhow!("tool '{name}' is not registered"))?;
+        tool.validate_input(input)
     }
 
     pub fn register(&mut self, tool: Arc<dyn Tool>) {
@@ -43,6 +102,7 @@ impl ToolRegistry {
     }
 
     pub fn execute(&self, name: &str, input: Value) -> Result<Value> {
+        self.validate(name, &input)?;
         let tool = self
             .tools
             .get(name)
@@ -58,6 +118,7 @@ impl ToolRegistry {
         control: &ExecutionControl,
     ) -> Result<Value> {
         control.check()?;
+        self.validate(name, &input)?;
         let tool = self
             .tools
             .get(name)
@@ -110,6 +171,10 @@ impl MotorControlTool {
 }
 
 impl Tool for MotorControlTool {
+    fn validate_input(&self, input: &Value) -> Result<()> {
+        validate_builtin_input(self.name(), input)
+    }
+
     fn name(&self) -> &str {
         "motor_control"
     }
@@ -197,6 +262,10 @@ impl SensorTool {
 }
 
 impl Tool for SensorTool {
+    fn validate_input(&self, input: &Value) -> Result<()> {
+        validate_builtin_input(self.name(), input)
+    }
+
     fn name(&self) -> &str {
         "sensor"
     }
@@ -252,6 +321,10 @@ impl SimulatorTool {
 }
 
 impl Tool for SimulatorTool {
+    fn validate_input(&self, input: &Value) -> Result<()> {
+        validate_builtin_input(self.name(), input)
+    }
+
     fn name(&self) -> &str {
         "simulator"
     }

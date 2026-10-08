@@ -41,6 +41,9 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
+      - name: Check dashboard JavaScript
+        run: node --check dashboard/app.js
+
       - name: Build workspace and examples
         run: cargo build --locked --workspace --all-targets
 

@@ -439,6 +439,21 @@ The example:
 
 ## Development
 
+### Robot workspace and local gateway
+
+OpenClaw-inspired capabilities for robot development now include named sessions,
+local memory recall, planning fallback, tool policy, extensible YAML skills,
+structured event traces, diagnostics, durable jobs, and an authenticated local
+control dashboard. See the [workspace guide](docs/robot-workspace.md) for
+configuration, commands and API examples, and the [adoption matrix](docs/openclaw-adoption.md)
+for implemented capabilities and future integrations.
+
+```bash
+cargo run --locked --bin roboclaw -- doctor --json
+cargo run --locked --bin roboclaw -- run "Wave the robot arm." --session lab --stream
+cargo run --locked --bin roboclaw -- sessions show lab --json
+```
+
 ### Command-line interface
 
 Run the CLI from the repository root:
@@ -467,9 +482,11 @@ and recovery; it does not establish a connection to a real robot or Gazebo serve
 | --- | --- |
 | `--project-dir PATH` | Locate `skills/` and `prompts/` under PATH; defaults to the current directory. Available on all commands. |
 | `--json` | Print a JSON skill array, plan with its `decision`, or gateway execution result. Available on all commands. |
-| `--provider mock\|auto\|local\|openai\|claude` | Choose a planner for `plan` or `run`. Defaults to `mock` for offline use. `auto` honors `ROBOCLAW_LLM_PROVIDER` and existing provider discovery. |
+| `--provider mock\|auto\|local\|openai\|claude` | Choose a planner for `plan` or `run`. Defaults to the configured provider (`mock` for offline use). `auto` honors `ROBOCLAW_LLM_PROVIDER` and existing provider discovery. |
 | `--timeout DURATION` | Set one positive execution budget for `run`, e.g. `30s` or `2m`, shared by planning, retries and recovery. |
-| `--memory-dir PATH` | Set storage for `run`; defaults to `PROJECT_DIR/target/cli-memory`. Relative overrides resolve from the current directory. |
+| `--session NAME` | Select an isolated named run session; defaults to `main`. |
+| `--fallback PROVIDER` | Explicit planning fallback (repeatable); CLI provider selections otherwise remain strict. |
+| `--memory-dir PATH` | Set storage for `run`; defaults to `PROJECT_DIR/target/cli-memory`. Relative overrides resolve from the current directory. Run journals are stored separately. |
 
 Use `--project-dir /path/to/roboclaw-rs` when running outside the repository.
 Remote and local model providers use the same environment configuration as the
@@ -623,4 +640,4 @@ If you want a ready-made script and shot list for narration, use `docs/demo_vide
 - Add world model updates from sensor streams
 - Add Isaac Sim backend alongside Gazebo
 - Support action servers, navigation, and manipulation pipelines
-- Persist vectorized long-term memory and skill execution traces
+- Add vector-based search to the existing long-term memory and run traces

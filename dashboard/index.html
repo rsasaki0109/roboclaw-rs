@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>RoboClaw Control</title><link rel="icon" href="/favicon.svg"><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head>
+<body><main><header><span class="eyebrow">ROBOCLAW / LOCAL CONTROL</span><h1>Robot workspace</h1><p>Plan skills, run simulated tasks, and follow their progress.</p></header>
+<section><h2>Connect</h2><form id="connect"><label>Gateway token<input id="token" type="password" autocomplete="off" required placeholder="ROBOCLAW_GATEWAY_TOKEN"></label><button>Connect</button></form><p id="connection" role="status">Disconnected</p></section>
+<section><h2>Task</h2><form id="task"><label>Session<input id="session" value="lab" required pattern="[A-Za-z0-9_-]{1,64}"></label><label>Instruction<textarea id="instruction" rows="3" required>Pick up the red cube and place it in bin_a.</textarea></label><div class="actions"><button name="action" value="plan">Preview plan</button><button name="action" value="run">Run in simulator</button></div></form><div id="plan" aria-live="polite"></div></section>
+<section><h2>Jobs</h2><p>Tasks execute one at a time. Select a job to inspect its events.</p><div id="jobs"></div></section>
+<section><h2>Live events</h2><p id="selected">Select a job</p><pre id="events" aria-live="polite"></pre></section>
+<section><h2>Skills &amp; workspace health</h2><button id="inspect">Inspect workspace</button><div id="health"></div></section>
+<p id="error" role="alert"></p><footer>Simulation control. Synchronous operations finish before cancellation is observed.</footer></main></body></html>

@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -74,7 +74,9 @@ impl SkillCatalog {
         let mut skills = BTreeMap::new();
         for file in files {
             let skill = load_skill_file(&file)?;
-            skills.insert(skill.name.clone(), skill);
+            if skills.insert(skill.name.clone(), skill.clone()).is_some() {
+                return Err(anyhow!("duplicate skill '{}' in {:?}", skill.name, dir));
+            }
         }
 
         if skills.is_empty() {
@@ -82,6 +84,65 @@ impl SkillCatalog {
         }
 
         Ok(Self { skills })
+    }
+
+    /// Merge from lowest to highest precedence; duplicates within one directory fail.
+    pub fn from_dirs(dirs: &[PathBuf]) -> Result<Self> {
+        let mut skills = BTreeMap::new();
+        for dir in dirs {
+            skills.extend(Self::from_dir(dir)?.skills);
+        }
+        if skills.is_empty() {
+            return Err(anyhow!("no skill directories configured"));
+        }
+        Ok(Self { skills })
+    }
+
+    pub fn validate(&self, available_tools: &[String]) -> Result<()> {
+        for skill in self.values() {
+            if skill.name.trim().is_empty() || skill.description.trim().is_empty() {
+                return Err(anyhow!("skill name and description must be non-empty"));
+            }
+            let mut names = BTreeSet::new();
+            for step in &skill.steps {
+                if step.name.trim().is_empty() || !names.insert(&step.name) {
+                    return Err(anyhow!(
+                        "skill '{}' has an empty or duplicate step '{}'",
+                        skill.name,
+                        step.name
+                    ));
+                }
+                if !available_tools.contains(&step.tool) {
+                    return Err(anyhow!(
+                        "skill '{}' step '{}' uses unknown tool '{}'",
+                        skill.name,
+                        step.name,
+                        step.tool
+                    ));
+                }
+                if step.max_retries > 100 {
+                    return Err(anyhow!(
+                        "skill '{}' step '{}' exceeds 100 retries",
+                        skill.name,
+                        step.name
+                    ));
+                }
+                if let Some(checkpoint) = &step.resume_from_step {
+                    if !skill
+                        .steps
+                        .iter()
+                        .any(|candidate| &candidate.name == checkpoint)
+                    {
+                        return Err(anyhow!(
+                            "skill '{}' references missing checkpoint '{}'",
+                            skill.name,
+                            checkpoint
+                        ));
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     pub fn get(&self, name: &str) -> Option<&Skill> {
