@@ -700,3 +700,199 @@ fn local_model_context_contains_only_the_selected_sessions_memory() {
     #[cfg(unix)]
     gateway.shutdown();
 }
+
+#[test]
+fn gateway_recovery_challenges_validate_auth_compare_and_share_the_runner() {
+    let project = Project::new();
+    let gateway = Gateway::start(&project, &[]);
+    assert_eq!(
+        gateway
+            .client
+            .get(format!("{}/api/challenges", gateway.base))
+            .send()
+            .unwrap()
+            .status(),
+        401
+    );
+    assert_eq!(
+        gateway
+            .get("challenges/scenarios")
+            .as_array()
+            .unwrap()
+            .len(),
+        6
+    );
+    for invalid in [
+        json!([]),
+        json!({"repeats":0}),
+        json!({"providers":["auto"]}),
+        json!({"scenarios":["unknown"]}),
+        json!({"timeout":"61s"}),
+        json!({"extra":true}),
+    ] {
+        assert_eq!(
+            gateway
+                .client
+                .post(format!("{}/api/challenges", gateway.base))
+                .bearer_auth(TOKEN)
+                .json(&invalid)
+                .send()
+                .unwrap()
+                .status(),
+            400
+        );
+    }
+    assert_eq!(gateway.get("challenges"), json!([]));
+    let challenge = gateway.post("challenges", json!({"repeats":1}));
+    let id = challenge["id"].as_str().unwrap();
+    let started = Instant::now();
+    let result = loop {
+        let report = gateway.get(&format!("challenges/{id}"));
+        if report["challenge"]["status"] == "completed" {
+            break report;
+        }
+        assert!(started.elapsed() < Duration::from_secs(10), "{report}");
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    assert_eq!(result["rankings"][0]["strategy"], "recovery");
+    assert_eq!(result["rankings"][0]["passed"], 4);
+    assert_eq!(result["rankings"][1]["passed"], 2);
+    let run_id = result["challenge"]["trials"][0]["run_id"].as_str().unwrap();
+    assert!(!gateway
+        .get(&format!("runs/{run_id}/events"))
+        .as_array()
+        .unwrap()
+        .is_empty());
+    let overlap = project
+        .command()
+        .args(["challenges", "run", "--repeats", "1"])
+        .output()
+        .unwrap();
+    assert!(!overlap.status.success());
+    assert!(String::from_utf8_lossy(&overlap.stderr).contains("resource is busy"));
+    assert_eq!(gateway.get("challenges").as_array().unwrap().len(), 1);
+    let job = gateway.post("jobs", json!({"request":{"instruction":"wave_arm"}}));
+    gateway.wait_job(job["id"].as_str().unwrap(), "completed");
+    #[cfg(unix)]
+    gateway.shutdown();
+}
+
+#[test]
+fn cancelling_an_active_challenge_stops_its_trial_and_skips_future_trials() {
+    let project = Project::new();
+    let gateway = Gateway::start(&project, &[]);
+    let challenge = gateway.post(
+        "challenges",
+        json!({"scenarios":["sensor-timeout"],"repeats":2,"timeout":"10s"}),
+    );
+    let id = challenge["id"].as_str().unwrap();
+    let run_id = challenge["trials"][0]["run_id"].as_str().unwrap();
+    let started = Instant::now();
+    loop {
+        let events = gateway
+            .client
+            .get(format!("{}/api/runs/{run_id}/events", gateway.base))
+            .bearer_auth(TOKEN)
+            .send()
+            .unwrap();
+        if events.status().is_success()
+            && events
+                .json::<Value>()
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|event| event["kind"] == "tool_invoked")
+        {
+            break;
+        }
+        assert!(started.elapsed() < Duration::from_secs(10));
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(
+        gateway
+            .client
+            .post(format!("{}/api/challenges/{id}/cancel", gateway.base))
+            .bearer_auth(TOKEN)
+            .json(&json!([]))
+            .send()
+            .unwrap()
+            .status(),
+        400
+    );
+    gateway.post(&format!("challenges/{id}/cancel"), json!({}));
+    let result = loop {
+        let report = gateway.get(&format!("challenges/{id}"));
+        if report["challenge"]["status"] == "cancelled" {
+            break report;
+        }
+        assert!(started.elapsed() < Duration::from_secs(10));
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    let trials = result["challenge"]["trials"].as_array().unwrap();
+    assert!(trials
+        .iter()
+        .all(|trial| trial["status"] == "cancelled" && trial["passed"] == false));
+    assert!(trials[0]["elapsed_ms"].is_number());
+    assert!(trials[1..]
+        .iter()
+        .all(|trial| trial["elapsed_ms"].is_null()));
+    assert_eq!(gateway.get("runs").as_array().unwrap().len(), 1);
+    #[cfg(unix)]
+    gateway.shutdown();
+}
+
+#[test]
+fn gateway_restart_marks_challenge_and_active_run_interrupted_without_replay() {
+    let project = Project::new();
+    let mut gateway = Gateway::start(&project, &[]);
+    let challenge = gateway.post(
+        "challenges",
+        json!({"scenarios":["sensor-timeout"],"repeats":2,"timeout":"10s"}),
+    );
+    let id = challenge["id"].as_str().unwrap();
+    let run_id = challenge["trials"][0]["run_id"].as_str().unwrap();
+    let started = Instant::now();
+    loop {
+        let response = gateway
+            .client
+            .get(format!("{}/api/runs/{run_id}/events", gateway.base))
+            .bearer_auth(TOKEN)
+            .send()
+            .unwrap();
+        if response.status().is_success()
+            && response
+                .json::<Value>()
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|event| event["kind"] == "tool_invoked")
+        {
+            break;
+        }
+        assert!(started.elapsed() < Duration::from_secs(10));
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let mut child = gateway.child.take().unwrap();
+    child.kill().unwrap();
+    child.wait().unwrap();
+    let restarted = Gateway::start(&project, &[]);
+    let report = restarted.get(&format!("challenges/{id}"));
+    assert_eq!(report["challenge"]["status"], "interrupted");
+    assert_eq!(report["challenge"]["trials"][0]["status"], "interrupted");
+    assert_eq!(report["challenge"]["trials"][1]["status"], "queued");
+    assert_eq!(
+        restarted.get(&format!("runs/{run_id}"))["status"],
+        "interrupted"
+    );
+    let job = restarted.post("jobs", json!({"request":{"instruction":"wave_arm"}}));
+    restarted.wait_job(job["id"].as_str().unwrap(), "completed");
+    assert_eq!(restarted.get("runs").as_array().unwrap().len(), 2);
+    assert_eq!(
+        restarted.get(&format!("challenges/{id}"))["challenge"]["status"],
+        "interrupted"
+    );
+    #[cfg(unix)]
+    restarted.shutdown();
+}

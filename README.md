@@ -445,7 +445,8 @@ OpenClaw-inspired capabilities for robot development now include named sessions,
 local memory recall, planning fallback, tool policy, extensible YAML skills,
 structured event traces, diagnostics, durable jobs, run result webhooks, and an authenticated local
 control dashboard. See the [webhook guide](docs/webhooks.md) for delivery and retry
-behavior, the [workspace guide](docs/robot-workspace.md) for
+behavior, the [recovery challenge guide](docs/recovery-challenges.md) for fault
+injection and planner/strategy comparisons, the [workspace guide](docs/robot-workspace.md) for
 configuration, commands and API examples, and the [adoption matrix](docs/openclaw-adoption.md)
 for implemented capabilities and future integrations.
 

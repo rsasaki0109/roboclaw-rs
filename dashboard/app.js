@@ -1,6 +1,8 @@
 'use strict';
 const byId = id => document.getElementById(id);
 let token = '', selectedJob = null, activeRun = null, after = 0, polling = false;
+let selectedChallenge = null;
+let renderedChallenge = null;
 const retrying = new Set();
 byId('timezone').value = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 async function api(path, data) {
@@ -37,7 +39,13 @@ async function refresh() {
   if (!token || polling) return;
   polling = true;
   try {
-    const [jobs, deliveries] = await Promise.all([api('jobs'), api('webhooks')]);
+    const [jobs, deliveries, challenges] = await Promise.all([api('jobs'), api('webhooks'), api('challenges')]);
+    renderChallenges(challenges);
+    const observedChallenge = selectedChallenge;
+    if (observedChallenge) {
+      const report = await api(`challenges/${observedChallenge}`);
+      if (selectedChallenge === observedChallenge) renderChallengeResults(report);
+    }
     renderNotifications(deliveries);
     byId('jobs').replaceChildren();
     for (const job of [...jobs].reverse()) {
@@ -53,14 +61,16 @@ async function refresh() {
     }
     const observedJob = selectedJob;
     const job = jobs.find(job => job.id === observedJob);
-    if (job && job.run_id) {
-      if (job.run_id !== activeRun) { activeRun = job.run_id; after = 0; byId('events').textContent = ''; }
+    if ((job && job.run_id) || (!observedJob && activeRun)) {
+      if (job && job.run_id !== activeRun) { activeRun = job.run_id; after = 0; byId('events').textContent = ''; }
       const run = activeRun;
       const events = await api(`runs/${run}/events?after=${after}`);
       if (selectedJob !== observedJob || activeRun !== run) return;
       for (const event of events) { byId('events').textContent += `${event.seq} ${event.kind} ${JSON.stringify(event.payload)}\n`; after = event.seq; }
-      const state = job.result?.backend_state;
-      byId('selected').textContent = `${job.status} · ${job.request.session}${state ? ` · Pose: ${state.last_pose} · Holding: ${state.held_object || 'nothing'}` : ''}`;
+      if (job) {
+        const state = job.result?.backend_state;
+        byId('selected').textContent = `${job.status} · ${job.request.session}${state ? ` · Pose: ${state.last_pose} · Holding: ${state.held_object || 'nothing'}` : ''}`;
+      }
     }
   } catch (error) { showError(error); } finally { polling = false; }
 }
@@ -121,4 +131,72 @@ function renderNotifications(deliveries) {
     }
     container.append(entry);
   }
+}
+
+byId('challenge-form').addEventListener('submit', async event => {
+  event.preventDefault(); byId('error').textContent = '';
+  const checked = name => [...document.querySelectorAll(`#challenge-form input[name="${name}"]:checked`)].map(input => input.value);
+  const request = {scenarios: checked('scenario'), strategies: checked('strategy'), providers: checked('provider'), repeats: Number(byId('challenge-repeats').value), timeout: byId('challenge-timeout').value.trim()};
+  byId('challenge-start').disabled = true;
+  try { const challenge = await api('challenges', request); selectedChallenge = challenge.id; await refresh(); }
+  catch (error) { showError(error); }
+  finally { byId('challenge-start').disabled = false; }
+});
+function renderChallenges(challenges) {
+  const container = byId('challenges'); container.replaceChildren();
+  if (!challenges.length) { container.append(element('p', 'No comparisons yet. Start with Mock to try the stock skills.')); return; }
+  for (const challenge of [...challenges].reverse()) {
+    const row = element('div', ''); row.className = 'job';
+    const finished = challenge.trials.filter(trial => !['queued', 'running'].includes(trial.status)).length;
+    const label = element('button', `${challenge.status} · ${finished}/${challenge.trials.length} trials · ${new Date(challenge.created_at).toLocaleString()}`);
+    label.className = 'job-label'; label.setAttribute('aria-pressed', String(selectedChallenge === challenge.id));
+    label.addEventListener('click', async () => {
+      selectedChallenge = challenge.id;
+      try { const report = await api(`challenges/${challenge.id}`); if (selectedChallenge === challenge.id) renderChallengeResults(report); }
+      catch (error) { showError(error); }
+    }); row.append(label);
+    if (['queued', 'running'].includes(challenge.status)) {
+      const cancel = element('button', challenge.cancel_requested ? 'Stopping…' : 'Cancel comparison'); cancel.disabled = challenge.cancel_requested;
+      cancel.addEventListener('click', async () => { try { await api(`challenges/${challenge.id}/cancel`, {}); await refresh(); } catch (error) { showError(error); } }); row.append(cancel);
+    }
+    container.append(row);
+  }
+}
+function renderChallengeResults(report) {
+  const {challenge, rankings} = report;
+  const version = `${challenge.id}/${challenge.updated_at}/${challenge.status}`;
+  if (renderedChallenge === version) return;
+  renderedChallenge = version;
+  const container = byId('challenge-results');
+  const detailsOpen = container.querySelector('details')?.open || false;
+  container.replaceChildren();
+  container.append(element('h3', `Comparison · ${challenge.status}`));
+  const wrap = element('div', ''); wrap.className = 'table-scroll';
+  const table = document.createElement('table'); table.append(element('caption', 'Planner and strategy results'));
+  const head = document.createElement('thead'), header = document.createElement('tr');
+  for (const title of ['Planner / strategy', 'Passed / planned', 'Mean time', 'Retries', 'Replans']) { const th = element('th', title); th.scope = 'col'; header.append(th); }
+  head.append(header); table.append(head);
+  const body = document.createElement('tbody');
+  for (const rank of rankings) {
+    const row = document.createElement('tr');
+    for (const text of [`${rank.provider} / ${rank.strategy}`, `${rank.passed}/${rank.planned} (${Math.round(rank.pass_rate * 100)}%)`, rank.mean_elapsed_ms === null ? '—' : `${Math.round(rank.mean_elapsed_ms)} ms`, rank.retries, rank.replans]) row.append(element('td', text));
+    body.append(row);
+  }
+  table.append(body); wrap.append(table); container.append(wrap);
+  container.append(element('p', 'Time includes planning and execution. “Completed” means the comparison finished; individual missions can fail. Sensor-wait trials pass when the deadline stops execution before motion.'));
+  const details = document.createElement('details'); details.append(element('summary', `Trial details (${challenge.trials.length})`));
+  details.open = detailsOpen;
+  const list = document.createElement('ul');
+  for (const trial of challenge.trials) {
+    const row = element('li', `${trial.scenario} · ${trial.provider} / ${trial.strategy} · Repeat ${trial.repetition} · ${trial.status} · ${trial.passed ? 'PASS' : 'not passed'} · Faults: ${trial.faults_injected} · Retries: ${trial.retries}${trial.recovery_ms === null ? '' : ` · Recovery: ${trial.recovery_ms} ms`}${trial.error ? ` · ${trial.error}` : ''}`);
+    if (trial.elapsed_ms !== null) {
+      const trace = element('button', 'View events'); trace.className = 'trace-button';
+      trace.addEventListener('click', async () => {
+        selectedJob = null; activeRun = trial.run_id; after = 0; byId('events').textContent = ''; byId('selected').textContent = `${trial.scenario} · ${trial.status} · ${trial.run_id}`;
+        await refresh(); byId('events').scrollIntoView({behavior: 'smooth', block: 'center'});
+      }); row.append(trace);
+    }
+    list.append(row);
+  }
+  details.append(list); container.append(details);
 }

@@ -139,6 +139,13 @@ pub struct MotorControlTool {
 }
 
 impl MotorControlTool {
+    /// A deterministic tool without process-wide failure injection.
+    pub fn without_transient_failures(backend: Arc<dyn RobotBackend>) -> Self {
+        Self {
+            backend,
+            transient_failures: Mutex::new(HashMap::new()),
+        }
+    }
     pub fn new(backend: Arc<dyn RobotBackend>) -> Self {
         let mut transient_failures = HashMap::new();
         if let Ok(raw_fail_count) = env::var("ROBOCLAW_MOTOR_FAIL_COUNT") {
@@ -218,6 +225,26 @@ pub struct SensorTool {
 
 impl Default for SensorTool {
     fn default() -> Self {
+        let mut tool = Self::without_transient_failures();
+        if let Ok(raw_fail_count) = env::var("ROBOCLAW_SENSOR_FAIL_COUNT") {
+            if let Ok(fail_count) = raw_fail_count.parse::<usize>() {
+                if fail_count > 0 {
+                    let target = env::var("ROBOCLAW_SENSOR_FAIL_TARGET")
+                        .unwrap_or_else(|_| "red_cube".to_string());
+                    tool.transient_failures
+                        .get_mut()
+                        .expect("new sensor mutex poisoned")
+                        .insert(target, fail_count);
+                }
+            }
+        }
+        tool
+    }
+}
+
+impl SensorTool {
+    /// A deterministic tool without process-wide failure injection.
+    pub fn without_transient_failures() -> Self {
         let mut observations = HashMap::new();
         observations.insert(
             "red_cube".to_string(),
@@ -233,24 +260,11 @@ impl Default for SensorTool {
                 confidence: 0.95,
             },
         );
-        let mut transient_failures = HashMap::new();
-        if let Ok(raw_fail_count) = env::var("ROBOCLAW_SENSOR_FAIL_COUNT") {
-            if let Ok(fail_count) = raw_fail_count.parse::<usize>() {
-                if fail_count > 0 {
-                    let target = env::var("ROBOCLAW_SENSOR_FAIL_TARGET")
-                        .unwrap_or_else(|_| "red_cube".to_string());
-                    transient_failures.insert(target, fail_count);
-                }
-            }
-        }
         Self {
             observations,
-            transient_failures: Mutex::new(transient_failures),
+            transient_failures: Mutex::new(HashMap::new()),
         }
     }
-}
-
-impl SensorTool {
     pub fn with_transient_failures(target: impl Into<String>, fail_count: usize) -> Self {
         let tool = Self::default();
         tool.transient_failures
