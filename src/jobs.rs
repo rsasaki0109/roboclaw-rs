@@ -1,5 +1,6 @@
 use crate::memory::EventObserver;
 use crate::runtime::{RunOutput, RunRequest, Workspace};
+use crate::schedule::CronSchedule;
 use crate::storage::{now_millis, read_json, validate_id, write_json, Lease};
 use crate::tools::ExecutionControl;
 use anyhow::{bail, Result};
@@ -14,6 +15,8 @@ pub struct Job {
     pub created_at: u64,
     pub due_at: u64,
     pub interval_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cron: Option<CronSchedule>,
     pub status: String,
     pub request: RunRequest,
     pub run_id: Option<String>,
@@ -67,9 +70,34 @@ impl Jobs {
     }
     pub fn add(
         &self,
+        request: RunRequest,
+        due_at: u64,
+        interval: Option<Duration>,
+        isolated: bool,
+    ) -> Result<Job> {
+        self.enqueue(request, due_at, interval, None, isolated)
+    }
+
+    /// Queue the first calendar occurrence strictly after submission, without
+    /// running operations. Timezone defaults belong to the CLI/API callers.
+    pub fn add_cron(
+        &self,
+        request: RunRequest,
+        expression: &str,
+        timezone: &str,
+        isolated: bool,
+    ) -> Result<Job> {
+        let cron = CronSchedule::new(expression, timezone)?;
+        let due_at = cron.next_after(now_millis())?;
+        self.enqueue(request, due_at, None, Some(cron), isolated)
+    }
+
+    fn enqueue(
+        &self,
         mut request: RunRequest,
         due_at: u64,
         interval: Option<Duration>,
+        cron: Option<CronSchedule>,
         isolated: bool,
     ) -> Result<Job> {
         let id = uuid::Uuid::new_v4().to_string();
@@ -93,6 +121,7 @@ impl Jobs {
             created_at: now_millis(),
             due_at,
             interval_ms,
+            cron,
             status: "queued".into(),
             request,
             run_id: None,
@@ -226,7 +255,7 @@ impl Jobs {
             )
         });
         let _lease = self.lock()?;
-        // Re-read cancellation so a late cancel also prevents future interval runs.
+        // Re-read cancellation so a late cancel also prevents future scheduled runs.
         let mut stored = self.get(&job.id)?;
         match execution {
             Ok(result) => {
@@ -245,11 +274,28 @@ impl Jobs {
             && !stored.cancel_requested
             && shutdown.stop_reason().is_none()
         {
-            if let Some(interval) = stored.interval_ms {
-                stored.due_at = now_millis()
-                    .checked_add(interval)
-                    .ok_or_else(|| anyhow::anyhow!("next job deadline overflow"))?;
-                stored.status = "queued".into();
+            let next = if let Some(cron) = &stored.cron {
+                // Skip missed slots, and never repeat this slot if the clock moved back.
+                Some(cron.next_after(now_millis().max(stored.due_at)))
+            } else {
+                stored.interval_ms.map(|interval| {
+                    now_millis()
+                        .checked_add(interval)
+                        .ok_or_else(|| anyhow::anyhow!("next job deadline overflow"))
+                })
+            };
+            match next {
+                Some(Ok(due_at)) => {
+                    stored.due_at = due_at;
+                    stored.status = "queued".into();
+                }
+                Some(Err(error)) => {
+                    // Persist a terminal scheduling error instead of leaving a
+                    // successful execution as an apparently interrupted claim.
+                    stored.status = "failed".into();
+                    stored.error = Some(format!("cannot schedule next run: {error:#}"));
+                }
+                None => {}
             }
         }
         write_json(&self.path(&job.id)?, &stored)?;

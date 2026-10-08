@@ -1,6 +1,7 @@
 'use strict';
 const byId = id => document.getElementById(id);
 let token = '', selectedJob = null, activeRun = null, after = 0, polling = false;
+byId('timezone').value = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 async function api(path, data) {
   const response = await fetch(`/api/${path}`, {method: data === undefined ? 'GET' : 'POST', headers: {Authorization: `Bearer ${token}`, 'Content-Type': 'application/json'}, body: data === undefined ? undefined : JSON.stringify(data)});
   const result = await response.json();
@@ -18,7 +19,14 @@ byId('task').addEventListener('submit', async event => {
   const request = {instruction: byId('instruction').value, session: byId('session').value};
   try {
     if (event.submitter.value === 'plan') renderPlan(await api('plan', request));
-    else { const job = await api('jobs', {request, isolated: false}); selectJob(job); await refresh(); }
+    else {
+      const submission = {request, isolated: false};
+      if (event.submitter.value === 'schedule') {
+        submission.cron = byId('cron').value.trim(); submission.timezone = byId('timezone').value.trim();
+        if (!submission.cron || !submission.timezone) throw new Error('Enter a cron schedule and timezone.');
+      }
+      const job = await api('jobs', submission); selectJob(job); await refresh();
+    }
   } catch (error) { showError(error); }
 });
 function selectJob(job) {
@@ -32,7 +40,10 @@ async function refresh() {
     byId('jobs').replaceChildren();
     for (const job of [...jobs].reverse()) {
       const row = document.createElement('div'); row.className = 'job';
-      const label = document.createElement('button'); label.className = 'job-label'; label.textContent = `${job.status} · ${job.request.session} · ${job.request.instruction}`; label.addEventListener('click', () => selectJob(job)); row.append(label);
+      const label = document.createElement('button'); label.className = 'job-label';
+      const schedule = job.cron ? ` · ${job.cron.expression} (${job.cron.timezone})` : '';
+      const due = job.status === 'queued' ? ` · Next: ${new Date(job.due_at).toLocaleString(undefined, job.cron ? {timeZone: job.cron.timezone, timeZoneName: 'short'} : {})}` : '';
+      label.textContent = `${job.status} · ${job.request.session} · ${job.request.instruction}${schedule}${due}`; label.addEventListener('click', () => selectJob(job)); row.append(label);
       if (['queued', 'running'].includes(job.status)) {
         const cancel = document.createElement('button'); cancel.textContent = 'Cancel'; cancel.addEventListener('click', async () => { try { await api(`jobs/${job.id}/cancel`, {}); await refresh(); } catch (error) { showError(error); } }); row.append(cancel);
       }

@@ -121,6 +121,7 @@ explicitly selected model providers receive configured reference context.
 ```bash
 roboclaw jobs add "Wave the robot arm." --after 10m --timeout 30s --json
 roboclaw jobs add "Wave the robot arm." --every 5m --session lab --json
+roboclaw jobs add "Wave the robot arm." --cron '0 9 * * MON-FRI' --timezone Asia/Tokyo --timeout 30s --json
 roboclaw jobs list --json
 roboclaw jobs show JOB_ID --json
 roboclaw jobs cancel JOB_ID --json
@@ -144,10 +145,38 @@ control token. Queued cancellation prevents dispatch; running cancellation is
 cooperative. The monitor and execution worker are joined before returning.
 
 Intervals must be at least 100ms. Successful interval jobs return to `queued`
-with their next due time measured from completion; missed intervals do not
-produce a catch-up burst. Failed, cancelled, interrupted and timed-out jobs stop.
+with their next due time measured from completion.
+
+`--cron` accepts five fields: **minute hour day-of-month month day-of-week**.
+Use numbers, `*`, lists (`0,30`), ranges (`9-17`), or steps (`*/15`). Month names
+`JAN`–`DEC` and weekday names `SUN`–`SAT` are accepted without case sensitivity;
+Sunday is `0` or `7`. If both day fields are restricted, either can match
+(standard cron OR behavior). Seconds, years, `@daily` and calendar extensions
+such as `L`, `W`, `#` or `?` are rejected. A schedule must have a future occurrence.
+`--timezone` takes an IANA name such as `Asia/Tokyo`, `America/New_York` or `UTC`;
+the CLI and API default to UTC, independent of the host's timezone. It requires
+`--cron`, which cannot be combined with `--after` or `--every`.
+
+The first cron occurrence is strictly after submission. After successful work,
+the next slot is strictly after both completion and the previous scheduled slot,
+so a backward clock change cannot repeat that slot. When the runner was offline,
+an overdue queued job runs once, then advances to a future slot; missed intervals
+and cron slots do not produce a catch-up burst. Persisted timestamps remain Unix
+milliseconds and `cron` records the expression and timezone. Existing job files
+without `cron` continue to load.
+
+Daylight saving transitions follow Croner's Vixie rules: a fixed time in a
+spring-forward gap runs at the gap's end; a fixed time in a repeated hour runs
+once, at its first occurrence. Wildcard/step time fields follow each matching
+real minute, including both passes of a repeated hour. Date search supports
+years before 5000. Timezone rules are bundled by `chrono-tz`; dependency updates
+are needed when governments change those rules.
+
+Failed, cancelled, interrupted and timed-out jobs stop repeating.
 `last_run_status` and `result` expose the latest outcome while a successful job
-waits for its next interval. Stopping the runner during active work cancels it;
+waits for its next slot. If the next slot cannot be calculated, the job becomes
+`failed` with a scheduling error; the successful run's result and
+`last_run_status: completed` remain available. Stopping the runner during active work cancels it;
 queued jobs remain available for a later start.
 
 ## Local gateway and dashboard
@@ -193,6 +222,20 @@ The gateway is a local development control plane, not a public deployment servic
 ```
 
 Optional `due_at` is Unix time in milliseconds; `every` is a duration string.
+For calendar jobs, supply `cron` and optional `timezone` (default `UTC`) instead
+of `due_at` and `every`:
+
+```json
+{
+  "request": {"instruction": "Wave the robot arm.", "timeout": "30s"},
+  "cron": "0 9 * * MON-FRI",
+  "timezone": "Asia/Tokyo",
+  "isolated": true
+}
+```
+
+The dashboard's **Schedule a recurring task** form uses the displayed browser
+timezone by default and shows each queued job's next time in its scheduled zone.
 `isolated` defaults to true. To share a named session, specify it in the request
 and set `isolated: false`. Memory search accepts `session`, `query`, and an
 optional `limit` (maximum 100). Unknown JSON request fields are rejected.
