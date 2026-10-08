@@ -91,17 +91,13 @@ impl Tool for MotorControlTool {
     }
 
     fn execute(&self, input: Value) -> Result<Value> {
-        let action = input
-            .get("action")
-            .and_then(Value::as_str)
-            .unwrap_or("grasp")
-            .to_string();
+        let command = Command::from_input(input)?;
 
         let mut transient_failures = self
             .transient_failures
             .lock()
             .expect("motor transient failure mutex poisoned");
-        if let Some(remaining) = transient_failures.get_mut(&action) {
+        if let Some(remaining) = transient_failures.get_mut(&command.action) {
             if *remaining > 0 {
                 *remaining -= 1;
                 return Ok(json!({
@@ -115,10 +111,7 @@ impl Tool for MotorControlTool {
             }
         }
 
-        let ack = self.backend.send_command(Command {
-            action,
-            parameters: input,
-        })?;
+        let ack = self.backend.send_command(command)?;
         Ok(json!({
             "tool": self.name(),
             "backend": ack.backend,
@@ -188,7 +181,8 @@ impl Tool for SensorTool {
         let target = input
             .get("target")
             .and_then(Value::as_str)
-            .unwrap_or("red_cube");
+            .filter(|target| !target.trim().is_empty())
+            .ok_or_else(|| anyhow!("sensor target must be a non-empty string"))?;
 
         let mut transient_failures = self
             .transient_failures
@@ -239,16 +233,8 @@ impl Tool for SimulatorTool {
     }
 
     fn execute(&self, input: Value) -> Result<Value> {
-        let action = input
-            .get("action")
-            .and_then(Value::as_str)
-            .unwrap_or("move_to")
-            .to_string();
-
-        let ack = self.backend.send_command(Command {
-            action,
-            parameters: input,
-        })?;
+        let command = Command::from_input(input)?;
+        let ack = self.backend.send_command(command)?;
 
         Ok(json!({
             "tool": self.name(),
@@ -268,7 +254,82 @@ struct SensorReading {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use roboclaw_sim::{BackendAck, RobotState};
     use serde_json::Value;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[derive(Default)]
+    struct RecordingBackend {
+        calls: AtomicUsize,
+    }
+
+    impl RobotBackend for RecordingBackend {
+        fn name(&self) -> &str {
+            "recording"
+        }
+
+        fn send_command(&self, _cmd: Command) -> Result<BackendAck> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Ok(BackendAck {
+                backend: self.name().to_string(),
+                accepted: true,
+                detail: "command recorded".to_string(),
+                state: self.current_state(),
+            })
+        }
+
+        fn current_state(&self) -> RobotState {
+            RobotState::default()
+        }
+    }
+
+    #[test]
+    fn command_tools_reject_invalid_input_before_calling_backend() {
+        let backend = Arc::new(RecordingBackend::default());
+        let tools: Vec<Box<dyn Tool>> = vec![
+            Box::new(MotorControlTool::new(backend.clone())),
+            Box::new(SimulatorTool::new(backend.clone())),
+        ];
+        let invalid_inputs = [
+            Value::Null,
+            json!([]),
+            json!({ "target": "red_cube", "pose": "home" }),
+            json!({ "action": 42, "target": "red_cube" }),
+            json!({ "action": "launch" }),
+            json!({ "action": "grasp" }),
+            json!({ "action": "grasp", "target": " " }),
+            json!({ "action": "move_to", "pose": 42 }),
+            json!({ "action": "place", "location": "bin_a" }),
+        ];
+
+        for tool in tools {
+            for input in &invalid_inputs {
+                assert!(
+                    tool.execute(input.clone()).is_err(),
+                    "{} must reject {input}",
+                    tool.name()
+                );
+            }
+        }
+        assert_eq!(backend.calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn sensor_rejects_invalid_target_without_consuming_transient_failure() {
+        let tool = SensorTool::with_transient_failures("red_cube", 1);
+        for input in [
+            Value::Null,
+            json!({}),
+            json!({ "target": null }),
+            json!({ "target": 42 }),
+            json!({ "target": " \t" }),
+        ] {
+            assert!(tool.execute(input).is_err());
+        }
+        let reading = tool.execute(json!({ "target": "red_cube" })).unwrap();
+        assert_eq!(reading["detected"], false);
+        assert_eq!(reading["remaining_failures"], 0);
+    }
 
     #[test]
     fn sensor_tool_supports_transient_failures() {
@@ -289,6 +350,9 @@ mod tests {
     fn motor_tool_supports_transient_failures() {
         let backend: Arc<dyn RobotBackend> = Arc::new(roboclaw_sim::GazeboBackend::new());
         let tool = MotorControlTool::with_transient_failures(backend, "grasp", 1);
+
+        tool.execute(json!({ "action": "grasp" }))
+            .expect_err("invalid input must not consume the transient failure");
 
         let first = tool
             .execute(json!({ "action": "grasp", "target": "red_cube" }))

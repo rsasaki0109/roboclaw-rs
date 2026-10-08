@@ -191,6 +191,26 @@ Current backends:
 
 Both share the same command API. The demo uses `GazeboBackend`.
 
+Commands are validated before state changes or ROS2 command publication. The
+existing `Command { action, parameters }` JSON format is preserved; execution
+uses a typed command internally. Supported operations are:
+
+| Action | Required parameters |
+| --- | --- |
+| `move_to` | `pose` |
+| `grasp` | `target` |
+| `place` | `target`, `location` |
+
+Parameters must be an object, and each required value must be a non-empty string.
+Unknown actions and conflicting `parameters.action` values are rejected. A grasp
+requires an empty gripper; a place requires that the held object matches `target`.
+Rejections return an error without changing state or publishing robot commands.
+
+`motor_control` and `simulator` inputs must explicitly specify `action`; `sensor`
+inputs must explicitly specify a non-empty `target`. Missing fields are no longer
+filled with default actions or targets. The bundled YAML skills satisfy this
+contract.
+
 ### LLM Integration
 
 The planner reads its prompt from `prompts/planner_prompt.txt`. The workspace now includes:
@@ -418,6 +438,20 @@ The example:
 `compare_planners` runs the same instruction through multiple planners and prints the selected skill plus planner reason or provider-specific error. It compares planning decisions only and does not execute robot actions. `--scenario recover-grasp` and `--scenario recover-observation` generate canonical failure contexts so you can inspect recovery skill selection without running the full gateway loop.
 
 ## Development
+
+The Rust CI workflow checks formatting, builds all workspace targets, runs the
+existing tests, and verifies the offline pick-and-place demo on Rust 1.99.0.
+Run the same checks locally:
+
+```bash
+cargo fmt --all -- --check
+cargo build --locked --workspace --all-targets
+cargo test --locked --workspace --all-targets
+bash scripts/check_mock_demo.sh
+```
+
+The smoke test requires no API keys or external services. It checks both
+`completed=true` and the final simulator state, with failures disabled.
 
 Format and run:
 
