@@ -35,6 +35,7 @@ pub struct Config {
     pub timeout: Option<String>,
     pub max_replans: usize,
     pub tools: ToolPolicy,
+    pub webhook: Option<crate::webhooks::WebhookConfig>,
 }
 
 impl Default for Config {
@@ -49,6 +50,7 @@ impl Default for Config {
             timeout: None,
             max_replans: 1,
             tools: ToolPolicy::default(),
+            webhook: None,
         }
     }
 }
@@ -75,6 +77,9 @@ impl Config {
     pub fn validate(&self) -> Result<()> {
         if self.version != 1 {
             bail!("unsupported config version {}", self.version);
+        }
+        if let Some(webhook) = &self.webhook {
+            webhook.validate()?;
         }
         validate_provider(&self.planner.provider)?;
         if self.planner.fallbacks.len() > 4 {

@@ -7,6 +7,7 @@ use roboclaw_rs::memory::{atomic_write, EventObserver, Memory};
 use roboclaw_rs::runtime::{RunOutput, RunRequest, Workspace};
 use roboclaw_rs::storage::now_millis;
 use roboclaw_rs::tools::ExecutionControl;
+use roboclaw_rs::webhooks::Webhooks;
 use serde::Serialize;
 use serde_json::json;
 use std::io::{self, Write};
@@ -92,6 +93,11 @@ enum CliCommand {
     Jobs {
         #[command(subcommand)]
         command: JobsCommand,
+    },
+    /// Inspect and dispatch durable run notifications without robot actions.
+    Webhooks {
+        #[command(subcommand)]
+        command: WebhooksCommand,
     },
     /// Start the local control API, dashboard and job runner.
     Gateway {
@@ -193,6 +199,19 @@ enum GatewayCommand {
     Serve {
         #[arg(long, default_value = "127.0.0.1:18790")]
         bind: SocketAddr,
+    },
+}
+
+#[derive(Subcommand)]
+enum WebhooksCommand {
+    List,
+    Show {
+        id: String,
+    },
+    /// Send due notifications once; failed HTTP requests never re-run the robot.
+    Dispatch {
+        #[arg(long, default_value_t = 100)]
+        limit: usize,
     },
 }
 
@@ -410,6 +429,21 @@ fn execute(cli: Cli) -> Result<ExitCode> {
                 }
             }
         }
+        CliCommand::Webhooks { command } => {
+            let webhooks = Webhooks { workspace: workspace.clone() };
+            match command {
+                WebhooksCommand::List => output(&webhooks.list()?, cli.json)?,
+                WebhooksCommand::Show { id } => output(&webhooks.get(&id)?, cli.json)?,
+                WebhooksCommand::Dispatch { limit } => {
+                    let shutdown = ExecutionControl::default(); signal_control(&shutdown)?;
+                    let outcomes = webhooks.dispatch(limit, &shutdown)?;
+                    let failed = outcomes.iter().any(|delivery| delivery.status != "delivered");
+                    output(&outcomes, cli.json)?;
+                    if shutdown.stop_reason().is_some() { return Ok(ExitCode::from(130)); }
+                    if failed { return Ok(ExitCode::FAILURE); }
+                }
+            }
+        },
         CliCommand::Gateway { command: GatewayCommand::Serve { bind } } => {
             let token = std::env::var("ROBOCLAW_GATEWAY_TOKEN").context("set ROBOCLAW_GATEWAY_TOKEN to start the gateway")?;
             let shutdown = ExecutionControl::default(); signal_control(&shutdown)?;

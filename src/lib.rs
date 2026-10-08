@@ -12,5 +12,6 @@ pub mod runtime;
 pub mod schedule;
 pub mod server;
 pub mod storage;
+pub mod webhooks;
 
 pub mod doctor;

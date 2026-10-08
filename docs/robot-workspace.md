@@ -207,6 +207,7 @@ The gateway is a local development control plane, not a public deployment servic
 | GET | `/api/runs`, `/api/runs/ID` | Run records and outcomes |
 | GET | `/api/runs/ID/events?after=N` | Cursor-based event trace |
 | GET | `/api/jobs`, `/api/jobs/ID` | Scheduled job state |
+| GET | `/api/webhooks`, `/api/webhooks/RUN_ID` | Run notification delivery state |
 | POST | `/api/jobs` | Submit a job (202) |
 | POST | `/api/jobs/ID/cancel` | Persist cancellation |
 | POST | `/api/memory/search` | Search one session's memory |
@@ -245,3 +246,8 @@ with fresh backend state; historical sessions are not live robot connections.
 Ctrl+C stops the runner and cancels active work cooperatively. Blocking HTTP
 cancellation is observed when the request returns; its timeout is capped by the
 remaining execution budget. Exit codes for direct runs remain 0/1/2/124/130.
+
+Configure optional [run result webhooks](webhooks.md) to publish terminal run
+status and backend state. The gateway sends notifications in a separate worker;
+notification retries never repeat robot tasks. Use `webhooks list`,
+`webhooks show RUN_ID` and `webhooks dispatch` for inspection and manual delivery.

@@ -4,6 +4,7 @@ use crate::memory::Memory;
 use crate::runtime::{RunRequest, Workspace};
 use crate::storage::now_millis;
 use crate::tools::ExecutionControl;
+use crate::webhooks::Webhooks;
 use anyhow::{anyhow, bail, Result};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -60,6 +61,28 @@ pub fn serve(
         .ok_or_else(|| anyhow!("gateway did not bind TCP"))?;
     eprintln!("gateway_url=http://{bound}");
     std::thread::scope(|scope| -> Result<()> {
+        let notifier = workspace.config.webhook.as_ref().map(|_| {
+            scope.spawn(|| {
+                struct CancelOnExit<'a>(&'a ExecutionControl);
+                impl Drop for CancelOnExit<'_> {
+                    fn drop(&mut self) {
+                        self.0.cancel();
+                    }
+                }
+                let _guard = CancelOnExit(&shutdown);
+                let webhooks = Webhooks {
+                    workspace: workspace.clone(),
+                };
+                while shutdown.stop_reason().is_none() {
+                    if let Err(error) = webhooks.dispatch(1, &shutdown) {
+                        eprintln!("webhook dispatcher: {error:#}");
+                        let _ = shutdown.wait(Duration::from_secs(1));
+                    } else {
+                        let _ = shutdown.wait(Duration::from_millis(100));
+                    }
+                }
+            })
+        });
         let worker = scope.spawn(|| -> Result<()> {
             while shutdown.stop_reason().is_none() {
                 if let Some(job) = jobs.claim_due(now_millis())? {
@@ -87,6 +110,11 @@ pub fn serve(
         }
         let result = worker.join().map_err(|_| anyhow!("job runner panicked"));
         shutdown.cancel();
+        if let Some(notifier) = notifier {
+            notifier
+                .join()
+                .map_err(|_| anyhow!("webhook dispatcher panicked"))?;
+        }
         for handler in handlers {
             handler
                 .join()
@@ -202,6 +230,18 @@ fn api(request: &mut Request, workspace: &Workspace, url: &str) -> Result<(u16, 
             serde_json::to_value(workspace.store.events(id, after, 1000)?)?
         }
         (&Method::Get, ["api", "jobs"]) => serde_json::to_value(jobs.list()?)?,
+        (&Method::Get, ["api", "webhooks"]) => serde_json::to_value(
+            Webhooks {
+                workspace: workspace.clone(),
+            }
+            .list()?,
+        )?,
+        (&Method::Get, ["api", "webhooks", id]) => serde_json::to_value(
+            Webhooks {
+                workspace: workspace.clone(),
+            }
+            .get(id)?,
+        )?,
         (&Method::Get, ["api", "jobs", id]) => serde_json::to_value(jobs.get(id)?)?,
         (&Method::Post, ["api", "jobs", id, "cancel"]) => serde_json::to_value(jobs.cancel(id)?)?,
         (&Method::Post, ["api", "jobs"]) => {

@@ -2,3 +2,4 @@
 
 h3{font-size:1rem;margin-top:22px}li{margin:12px 0;line-height:1.5}li pre{margin:8px 0;color:#a7b8c8}summary{cursor:pointer;color:#6ad9c3;font-size:.85rem}details{margin-top:20px}.check-ok{color:#aee0d5}.check-error{color:#ffada6}
 .schedule{display:grid;gap:16px;margin-top:16px}.schedule p{margin:0}
+#webhooks p{overflow-wrap:anywhere}

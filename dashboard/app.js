@@ -36,7 +36,8 @@ async function refresh() {
   if (!token || polling) return;
   polling = true;
   try {
-    const jobs = await api('jobs');
+    const [jobs, deliveries] = await Promise.all([api('jobs'), api('webhooks')]);
+    renderNotifications(deliveries);
     byId('jobs').replaceChildren();
     for (const job of [...jobs].reverse()) {
       const row = document.createElement('div'); row.className = 'job';
@@ -90,4 +91,12 @@ function renderHealth(doctor, skills) {
   const list = document.createElement('ul');
   for (const skill of skills) list.append(element('li', `${skill.name} · ${skill.description}`));
   container.append(list, rawDetails({doctor, skills}));
+}
+function renderNotifications(deliveries) {
+  const container = byId('webhooks'); container.replaceChildren();
+  if (!deliveries.length) { container.append(element('p', 'No run notifications. Configure a webhook to notify new runs.')); return; }
+  for (const delivery of [...deliveries].reverse()) {
+    const row = element('p', `${delivery.status} · ${delivery.payload.session} · ${delivery.run_id} · Attempts: ${delivery.attempts}${delivery.error ? ` · ${delivery.error}` : ''}`);
+    row.className = delivery.status === 'failed' ? 'check-error' : ''; container.append(row);
+  }
 }

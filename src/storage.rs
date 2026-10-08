@@ -98,6 +98,9 @@ pub struct RunRecord {
     pub finished_at: Option<u64>,
     pub result: Option<GatewayExecutionResult>,
     pub error: Option<String>,
+    /// Only runs started with webhook delivery configured opt in to notifications.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub webhook: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
