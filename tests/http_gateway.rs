@@ -260,6 +260,70 @@ fn malformed_requests_and_scheduled_cancellation_do_not_execute_tasks() {
 }
 
 #[test]
+fn gateway_accepts_calendar_jobs_and_rejects_conflicting_or_invalid_schedules() {
+    let project = Project::new();
+    let gateway = Gateway::start(&project, &[]);
+    for schedule in [
+        json!({"cron":"0 9 * * *", "every":"1h"}),
+        json!({"cron":"0 9 * * *", "due_at":0}),
+        json!({"timezone":"Asia/Tokyo"}),
+        json!({"cron":"0 9 * * *", "timezone":"Asia/Typo"}),
+        json!({"cron":"0 9 31 FEB *"}),
+        json!({"cron":"0 0 9 * * *"}),
+    ] {
+        let mut body = schedule;
+        body["request"] = json!({"instruction":"wave_arm"});
+        assert_eq!(
+            gateway
+                .client
+                .post(format!("{}/api/jobs", gateway.base))
+                .bearer_auth(TOKEN)
+                .json(&body)
+                .send()
+                .unwrap()
+                .status(),
+            400,
+            "{body}"
+        );
+    }
+    assert_eq!(gateway.get("jobs"), json!([]));
+    assert_eq!(gateway.get("runs"), json!([]));
+    // A yearly slot keeps the test independent of the runner's minute boundary.
+    let job = gateway.post(
+        "jobs",
+        json!({
+            "request":{"instruction":"wave_arm", "session":"scheduled"},
+            "cron":"0 9 1 JAN *", "timezone":"Asia/Tokyo", "isolated":false
+        }),
+    );
+    assert_eq!(
+        job["cron"],
+        json!({"expression":"0 9 1 JAN *", "timezone":"Asia/Tokyo"})
+    );
+    assert_eq!(job["request"]["session"], "scheduled");
+    assert_eq!(job["status"], "queued");
+    assert_eq!(
+        gateway.get(&format!("jobs/{}", job["id"].as_str().unwrap())),
+        job
+    );
+    assert_eq!(gateway.get("runs"), json!([]));
+    assert_eq!(
+        gateway.post(
+            &format!("jobs/{}/cancel", job["id"].as_str().unwrap()),
+            json!({})
+        )["status"],
+        "cancelled"
+    );
+    let default_zone = gateway.post(
+        "jobs",
+        json!({"request":{"instruction":"wave_arm"}, "cron":"0 9 1 JAN *"}),
+    );
+    assert_eq!(default_zone["cron"]["timezone"], "UTC");
+    #[cfg(unix)]
+    gateway.shutdown();
+}
+
+#[test]
 fn running_job_cancellation_survives_a_blocking_model_request() {
     use std::io::{Read, Write};
     use std::sync::mpsc;

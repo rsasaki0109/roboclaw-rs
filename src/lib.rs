@@ -9,6 +9,7 @@ pub use roboclaw_tools as tools;
 pub mod config;
 pub mod jobs;
 pub mod runtime;
+pub mod schedule;
 pub mod server;
 pub mod storage;
 

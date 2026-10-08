@@ -34,6 +34,9 @@ clap = { version = "4.5", features = ["derive"] }
 ctrlc = "3.4"
 humantime = "2.1"
 fs2 = "0.4"
+chrono = { version = "0.4", default-features = false, features = ["std"] }
+chrono-tz = "0.10"
+croner = "4.0.1"
 tiny_http = "0.12"
 uuid = { version = "1.11", features = ["v4"] }
 serde_yaml.workspace = true

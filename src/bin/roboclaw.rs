@@ -88,7 +88,7 @@ enum CliCommand {
         #[command(subcommand)]
         command: MemoryCommand,
     },
-    /// Submit and manage persistent one-time or interval jobs.
+    /// Submit and manage persistent one-time, interval or cron jobs.
     Jobs {
         #[command(subcommand)]
         command: JobsCommand,
@@ -166,6 +166,12 @@ enum JobsCommand {
         /// Repeat successful runs at this interval. Failed or cancelled jobs stop.
         #[arg(long, value_parser = parse_timeout)]
         every: Option<Duration>,
+        /// Five-field calendar schedule, e.g. "0 9 * * MON-FRI".
+        #[arg(long, conflicts_with_all = ["after", "every"])]
+        cron: Option<String>,
+        /// IANA timezone for --cron (default UTC), e.g. Asia/Tokyo.
+        #[arg(long, requires = "cron")]
+        timezone: Option<String>,
         #[arg(long, value_parser = parse_timeout)]
         timeout: Option<Duration>,
     },
@@ -368,13 +374,18 @@ fn execute(cli: Cli) -> Result<ExitCode> {
         CliCommand::Jobs { command } => {
             let jobs = Jobs { workspace: workspace.clone() };
             match command {
-                JobsCommand::Add { args, session, after, every, timeout } => {
+                JobsCommand::Add { args, session, after, every, cron, timezone, timeout } => {
                     let isolated = session.is_none();
                     let mut request = request(args, session.unwrap_or_else(|| "main".into()));
                     request.timeout = timeout.map(|timeout| humantime::format_duration(timeout).to_string());
-                    let delay = u64::try_from(after.unwrap_or_default().as_millis())?;
-                    let due = now_millis().checked_add(delay).context("job deadline overflow")?;
-                    output(&jobs.add(request, due, every, isolated)?, cli.json)?;
+                    let job = if let Some(expression) = cron {
+                        jobs.add_cron(request, &expression, timezone.as_deref().unwrap_or("UTC"), isolated)?
+                    } else {
+                        let delay = u64::try_from(after.unwrap_or_default().as_millis())?;
+                        let due = now_millis().checked_add(delay).context("job deadline overflow")?;
+                        jobs.add(request, due, every, isolated)?
+                    };
+                    output(&job, cli.json)?;
                 }
                 JobsCommand::List => output(&jobs.list()?, cli.json)?,
                 JobsCommand::Show { id } => output(&jobs.get(&id)?, cli.json)?,

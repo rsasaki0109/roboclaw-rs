@@ -25,6 +25,10 @@ struct Submission {
     due_at: Option<u64>,
     #[serde(default)]
     every: Option<String>,
+    #[serde(default)]
+    cron: Option<String>,
+    #[serde(default)]
+    timezone: Option<String>,
     #[serde(default = "isolated_default")]
     isolated: bool,
 }
@@ -202,20 +206,35 @@ fn api(request: &mut Request, workspace: &Workspace, url: &str) -> Result<(u16, 
         (&Method::Post, ["api", "jobs", id, "cancel"]) => serde_json::to_value(jobs.cancel(id)?)?,
         (&Method::Post, ["api", "jobs"]) => {
             let submission: Submission = body(request)?;
+            if submission.cron.is_some()
+                && (submission.every.is_some() || submission.due_at.is_some())
+            {
+                bail!("cron cannot be combined with every or due_at");
+            }
+            if submission.timezone.is_some() && submission.cron.is_none() {
+                bail!("timezone requires cron");
+            }
             let interval = submission
                 .every
                 .as_deref()
                 .map(parse_duration)
                 .transpose()?;
-            return Ok((
-                202,
-                serde_json::to_value(jobs.add(
+            let job = if let Some(expression) = submission.cron {
+                jobs.add_cron(
+                    submission.request,
+                    &expression,
+                    submission.timezone.as_deref().unwrap_or("UTC"),
+                    submission.isolated,
+                )?
+            } else {
+                jobs.add(
                     submission.request,
                     submission.due_at.unwrap_or_else(now_millis),
                     interval,
                     submission.isolated,
-                )?)?,
-            ));
+                )?
+            };
+            return Ok((202, serde_json::to_value(job)?));
         }
         (&Method::Post, ["api", "plan"]) => serde_json::to_value(workspace.plan(body(request)?)?)?,
         (&Method::Post, ["api", "memory", "search"]) => {

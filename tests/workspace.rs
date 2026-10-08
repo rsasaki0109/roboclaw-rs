@@ -1,7 +1,9 @@
 mod common;
+use chrono::{DateTime, Timelike, Utc};
 use common::Project;
 use roboclaw_rs::jobs::Jobs;
 use roboclaw_rs::runtime::{RunRequest, Workspace};
+use roboclaw_rs::schedule::CronSchedule;
 use roboclaw_rs::storage::{now_millis, Lease};
 use roboclaw_rs::tools::ExecutionControl;
 use serde_json::{json, Value};
@@ -461,4 +463,164 @@ fn auto_mock_planning_uses_the_current_instruction_instead_of_reference_context(
         common::json(output)["decision"]["skill"]["name"],
         "wave_arm"
     );
+}
+
+#[test]
+fn cron_cli_persists_tokyo_schedule_without_running_and_defaults_to_utc() {
+    let project = Project::new();
+    let before = now_millis();
+    let job = project.json(&[
+        "jobs",
+        "add",
+        "wave_arm",
+        "--cron",
+        "0 9 * * *",
+        "--timezone",
+        "Asia/Tokyo",
+    ]);
+    assert_eq!(
+        job["cron"],
+        json!({"expression":"0 9 * * *", "timezone":"Asia/Tokyo"})
+    );
+    assert_eq!(job["interval_ms"], Value::Null);
+    assert_eq!(job["status"], "queued");
+    let due = job["due_at"].as_u64().unwrap();
+    assert!(due > before && due <= now_millis() + 86_400_000);
+    let local = DateTime::<Utc>::from_timestamp_millis(due as i64)
+        .unwrap()
+        .with_timezone(&chrono_tz::Asia::Tokyo);
+    assert_eq!((local.hour(), local.minute(), local.second()), (9, 0, 0));
+    assert_eq!(
+        project.json(&["jobs", "show", job["id"].as_str().unwrap()]),
+        job
+    );
+    assert_eq!(project.json(&["runs", "list"]), json!([]));
+    assert_eq!(
+        project.json(&["jobs", "add", "wave_arm", "--cron", "* * * * *"])["cron"]["timezone"],
+        "UTC"
+    );
+}
+
+#[test]
+fn invalid_cron_cli_options_create_no_state() {
+    for options in [
+        vec!["--cron", "0 9 * * *", "--every", "1h"],
+        vec!["--cron", "0 9 * * *", "--after", "1h"],
+        vec!["--timezone", "Asia/Tokyo"],
+        vec!["--cron", "0 9 * * *", "--timezone", "Asia/Typo"],
+        vec!["--cron", "0 9 31 FEB *"],
+        vec!["--cron", "0 0 9 * * *"],
+    ] {
+        let project = Project::new();
+        let output = project
+            .command()
+            .args(["jobs", "add", "wave_arm"])
+            .args(&options)
+            .output()
+            .unwrap();
+        assert!(!output.status.success(), "{options:?}");
+        assert!(!project.root.join("target").exists(), "{options:?}");
+    }
+}
+
+#[test]
+fn overdue_cron_runs_once_then_skips_missed_slots_and_cancel_stops_recurrence() {
+    let project = Project::new();
+    let jobs = Jobs {
+        workspace: Workspace::load(&project.root, None).unwrap(),
+    };
+    let _runner = jobs.runner_lease().unwrap();
+    let mut job = jobs
+        .add_cron(RunRequest::new("wave_arm"), "* * * * *", "Asia/Tokyo", true)
+        .unwrap();
+    // Simulate a queued job persisted before a long offline period.
+    job.due_at = now_millis() - 86_400_000;
+    let path = jobs
+        .workspace
+        .store
+        .root
+        .join("jobs")
+        .join(format!("{}.json", job.id));
+    roboclaw_rs::storage::write_json(&path, &job).unwrap();
+    let claim = jobs.claim_due(now_millis()).unwrap().unwrap();
+    let result = jobs
+        .execute(claim, &ExecutionControl::default(), None)
+        .unwrap();
+    assert_eq!(result.status, "queued");
+    assert_eq!(result.last_run_status.as_deref(), Some("completed"));
+    assert!(result.due_at > now_millis());
+    assert_eq!(result.due_at % 60_000, 0);
+    assert!(jobs.claim_due(now_millis()).unwrap().is_none());
+    assert_eq!(jobs.workspace.store.runs().unwrap().len(), 1);
+    assert_eq!(
+        jobs.get(&job.id).unwrap().cron.unwrap().timezone,
+        "Asia/Tokyo"
+    );
+    assert_eq!(jobs.cancel(&job.id).unwrap().status, "cancelled");
+    assert!(jobs.claim_due(u64::MAX).unwrap().is_none());
+}
+
+#[test]
+fn cron_failures_and_interrupted_claims_stop_without_replay() {
+    let project = Project::new();
+    let jobs = Jobs {
+        workspace: Workspace::load(&project.root, None).unwrap(),
+    };
+    let _runner = jobs.runner_lease().unwrap();
+    let mut request = RunRequest::new("wave_arm");
+    request.timeout = Some("1ns".into());
+    let job = jobs.add_cron(request, "* * * * *", "UTC", true).unwrap();
+    let claim = jobs.claim_due(job.due_at).unwrap().unwrap();
+    let result = jobs
+        .execute(claim, &ExecutionControl::default(), None)
+        .unwrap();
+    assert_eq!(result.status, "timed_out");
+    assert!(jobs.claim_due(u64::MAX).unwrap().is_none());
+    let job = jobs
+        .add_cron(RunRequest::new("wave_arm"), "* * * * *", "UTC", true)
+        .unwrap();
+    jobs.claim_due(job.due_at).unwrap().unwrap();
+    assert_eq!(jobs.recover_interrupted().unwrap(), 1);
+    assert_eq!(jobs.get(&job.id).unwrap().status, "interrupted");
+    assert!(jobs.claim_due(u64::MAX).unwrap().is_none());
+}
+
+#[test]
+fn scheduling_errors_are_saved_and_legacy_jobs_without_cron_still_load() {
+    let project = Project::new();
+    let jobs = Jobs {
+        workspace: Workspace::load(&project.root, None).unwrap(),
+    };
+    let _runner = jobs.runner_lease().unwrap();
+    let mut job = jobs
+        .add(RunRequest::new("wave_arm"), now_millis(), None, true)
+        .unwrap();
+    let path = jobs
+        .workspace
+        .store
+        .root
+        .join("jobs")
+        .join(format!("{}.json", job.id));
+    let mut legacy = serde_json::to_value(&job).unwrap();
+    legacy.as_object_mut().unwrap().remove("cron");
+    roboclaw_rs::storage::write_json(&path, &legacy).unwrap();
+    assert!(jobs.get(&job.id).unwrap().cron.is_none());
+    job.cron = Some(CronSchedule {
+        expression: "0 9 31 FEB *".into(),
+        timezone: "UTC".into(),
+    });
+    roboclaw_rs::storage::write_json(&path, &job).unwrap();
+    let claim = jobs.claim_due(now_millis()).unwrap().unwrap();
+    let result = jobs
+        .execute(claim, &ExecutionControl::default(), None)
+        .unwrap();
+    assert_eq!(result.status, "failed");
+    assert_eq!(result.last_run_status.as_deref(), Some("completed"));
+    assert!(result
+        .error
+        .as_deref()
+        .unwrap()
+        .contains("cannot schedule next run"));
+    assert_eq!(jobs.get(&job.id).unwrap().status, "failed");
+    assert!(jobs.claim_due(u64::MAX).unwrap().is_none());
 }
