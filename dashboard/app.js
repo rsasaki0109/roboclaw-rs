@@ -1,6 +1,7 @@
 'use strict';
 const byId = id => document.getElementById(id);
 let token = '', selectedJob = null, activeRun = null, after = 0, polling = false;
+const retrying = new Set();
 byId('timezone').value = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 async function api(path, data) {
   const response = await fetch(`/api/${path}`, {method: data === undefined ? 'GET' : 'POST', headers: {Authorization: `Bearer ${token}`, 'Content-Type': 'application/json'}, body: data === undefined ? undefined : JSON.stringify(data)});
@@ -96,7 +97,28 @@ function renderNotifications(deliveries) {
   const container = byId('webhooks'); container.replaceChildren();
   if (!deliveries.length) { container.append(element('p', 'No run notifications. Configure a webhook to notify new runs.')); return; }
   for (const delivery of [...deliveries].reverse()) {
+    const entry = document.createElement('div'); entry.className = 'notification';
     const row = element('p', `${delivery.status} · ${delivery.payload.session} · ${delivery.run_id} · Attempts: ${delivery.attempts}${delivery.error ? ` · ${delivery.error}` : ''}`);
-    row.className = delivery.status === 'failed' ? 'check-error' : ''; container.append(row);
+    row.className = delivery.status === 'failed' ? 'check-error' : ''; entry.append(row);
+    if (delivery.status === 'failed') {
+      const retry = element('button', 'Retry notification'); retry.disabled = retrying.has(delivery.id);
+      retry.addEventListener('click', async () => {
+        if (retrying.has(delivery.id)) return;
+        retrying.add(delivery.id); retry.disabled = true; byId('error').textContent = '';
+        try { await api(`webhooks/${delivery.id}/retry`, {}); }
+        catch (error) { showError(error); }
+        finally { retrying.delete(delivery.id); await refresh(); }
+      });
+      entry.append(retry);
+    }
+    if (delivery.retries?.length) {
+      const details = document.createElement('details'); details.append(element('summary', `Retry history (${delivery.retries.length})`));
+      const history = document.createElement('ul');
+      for (const previous of delivery.retries) {
+        history.append(element('li', `${new Date(previous.requested_at).toLocaleString()} · Attempts: ${previous.attempts} · ${previous.error || 'Unacknowledged delivery'}`));
+      }
+      details.append(history); entry.append(details);
+    }
+    container.append(entry);
   }
 }

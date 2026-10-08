@@ -161,7 +161,11 @@ fn respond(mut request: Request, workspace: &Workspace, token: &str, bound: Sock
                         .is_some_and(|error| error.kind() == std::io::ErrorKind::NotFound)
                     {
                         404
-                    } else if format!("{error:#}").contains("resource is busy") {
+                    } else if error
+                        .downcast_ref::<crate::webhooks::RetryConflict>()
+                        .is_some()
+                        || format!("{error:#}").contains("resource is busy")
+                    {
                         409
                     } else {
                         400
@@ -242,6 +246,17 @@ fn api(request: &mut Request, workspace: &Workspace, url: &str) -> Result<(u16, 
             }
             .get(id)?,
         )?,
+        (&Method::Post, ["api", "webhooks", id, "retry"]) => {
+            let input: Value = body(request)?;
+            if !input.as_object().is_some_and(|object| object.is_empty()) {
+                bail!("webhook retry request must be an empty JSON object");
+            }
+            let delivery = Webhooks {
+                workspace: workspace.clone(),
+            }
+            .retry(id)?;
+            return Ok((202, serde_json::to_value(delivery)?));
+        }
         (&Method::Get, ["api", "jobs", id]) => serde_json::to_value(jobs.get(id)?)?,
         (&Method::Post, ["api", "jobs", id, "cancel"]) => serde_json::to_value(jobs.cancel(id)?)?,
         (&Method::Post, ["api", "jobs"]) => {

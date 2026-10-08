@@ -389,6 +389,130 @@ fn gateway_delivers_in_background_and_keeps_robot_jobs_independent() {
 }
 
 #[test]
+fn gateway_manual_retry_is_authenticated_validates_body_and_preserves_delivery_history() {
+    use std::sync::mpsc;
+    use tiny_http::{Response, Server};
+    let project = Project::new();
+    let receiver = Server::http("127.0.0.1:0").unwrap();
+    project.config(&format!(
+        "webhook:\n  url: http://{}/notify\n  max_attempts: 1\n",
+        receiver.server_addr()
+    ));
+    let (sender, received) = mpsc::channel();
+    let worker = std::thread::spawn(move || {
+        for status in [401, 200] {
+            let mut request = receiver
+                .recv_timeout(Duration::from_secs(10))
+                .unwrap()
+                .unwrap();
+            let payload: Value = serde_json::from_reader(request.as_reader()).unwrap();
+            sender.send(payload).unwrap();
+            request.respond(Response::empty(status)).unwrap();
+        }
+    });
+    let gateway = Gateway::start(&project, &[]);
+    let job = gateway.post("jobs", json!({"request":{"instruction":"wave_arm"}}));
+    let result = gateway.wait_job(job["id"].as_str().unwrap(), "completed");
+    let id = result["run_id"].as_str().unwrap();
+    let wait = |status: &str| {
+        let started = Instant::now();
+        loop {
+            let delivery = gateway.get(&format!("webhooks/{id}"));
+            if delivery["status"] == status {
+                break delivery;
+            }
+            assert!(
+                started.elapsed() < Duration::from_secs(10),
+                "delivery did not reach {status}: {delivery}"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    };
+    let failed = wait("failed");
+    let url = format!("{}/api/webhooks/{id}/retry", gateway.base);
+    assert_eq!(
+        gateway
+            .client
+            .post(&url)
+            .json(&json!({}))
+            .send()
+            .unwrap()
+            .status(),
+        401
+    );
+    assert_eq!(
+        gateway
+            .client
+            .post(&url)
+            .bearer_auth(TOKEN)
+            .body("{}")
+            .send()
+            .unwrap()
+            .status(),
+        415
+    );
+    for body in [json!({"force":true}), json!(null), json!([])] {
+        assert_eq!(
+            gateway
+                .client
+                .post(&url)
+                .bearer_auth(TOKEN)
+                .json(&body)
+                .send()
+                .unwrap()
+                .status(),
+            400
+        );
+    }
+    assert_eq!(gateway.get(&format!("webhooks/{id}")), failed);
+    assert_eq!(
+        gateway
+            .client
+            .post(format!("{}/api/webhooks/unknown/retry", gateway.base))
+            .bearer_auth(TOKEN)
+            .json(&json!({}))
+            .send()
+            .unwrap()
+            .status(),
+        404
+    );
+    let response = gateway
+        .client
+        .post(&url)
+        .bearer_auth(TOKEN)
+        .json(&json!({}))
+        .send()
+        .unwrap();
+    assert_eq!(response.status(), 202);
+    let queued: Value = response.json().unwrap();
+    assert_eq!(queued["status"], "pending");
+    assert_eq!(queued["attempts"], 1);
+    assert_eq!(queued["payload"], failed["payload"]);
+    let delivered = wait("delivered");
+    assert_eq!(delivered["attempts"], 2);
+    assert_eq!(delivered["retries"][0]["http_status"], 401);
+    assert_eq!(
+        gateway
+            .client
+            .post(&url)
+            .bearer_auth(TOKEN)
+            .json(&json!({}))
+            .send()
+            .unwrap()
+            .status(),
+        409
+    );
+    assert_eq!(
+        received.recv_timeout(Duration::from_secs(5)).unwrap(),
+        received.recv_timeout(Duration::from_secs(5)).unwrap()
+    );
+    assert_eq!(gateway.get("runs").as_array().unwrap().len(), 1);
+    worker.join().unwrap();
+    #[cfg(unix)]
+    gateway.shutdown();
+}
+
+#[test]
 fn running_job_cancellation_survives_a_blocking_model_request() {
     use std::io::{Read, Write};
     use std::sync::mpsc;

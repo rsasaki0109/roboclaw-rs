@@ -103,6 +103,11 @@ pub struct Delivery {
     pub run_id: String,
     pub status: String,
     pub attempts: u32,
+    /// Total attempts when the last manual retry was requested. Legacy files use 0.
+    #[serde(default)]
+    pub attempts_at_retry: u32,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub retries: Vec<ManualRetry>,
     pub next_attempt_at: u64,
     pub last_attempt_at: Option<u64>,
     pub delivered_at: Option<u64>,
@@ -111,6 +116,24 @@ pub struct Delivery {
     pub payload: Value,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ManualRetry {
+    pub requested_at: u64,
+    pub attempts: u32,
+    pub last_attempt_at: Option<u64>,
+    pub http_status: Option<u16>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug)]
+pub struct RetryConflict;
+impl std::fmt::Display for RetryConflict {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("only failed webhook deliveries can be retried")
+    }
+}
+impl std::error::Error for RetryConflict {}
+
 impl Delivery {
     fn for_run(run: &RunRecord) -> Self {
         Self {
@@ -118,6 +141,8 @@ impl Delivery {
             run_id: run.id.clone(),
             status: "pending".into(),
             attempts: 0,
+            attempts_at_retry: 0,
+            retries: Vec::new(),
             next_attempt_at: run.finished_at.unwrap_or(run.started_at),
             last_attempt_at: None,
             delivered_at: None,
@@ -131,6 +156,12 @@ impl Delivery {
                 "backend_state":run.result.as_ref().map(|result| &result.backend_state),
             }),
         }
+    }
+
+    fn attempts_since_retry(&self) -> Result<u32> {
+        self.attempts
+            .checked_sub(self.attempts_at_retry)
+            .context("stored webhook retry attempt count exceeds total attempts")
     }
 }
 
@@ -167,6 +198,7 @@ impl Webhooks {
             if delivery.id != run.id || delivery.run_id != run.id {
                 bail!("stored webhook delivery does not match its run ID");
             }
+            delivery.attempts_since_retry()?;
             deliveries.push(delivery);
         }
         deliveries.sort_by(|a, b| {
@@ -186,6 +218,45 @@ impl Webhooks {
                 std::io::Error::new(std::io::ErrorKind::NotFound, "webhook delivery not found")
                     .into()
             })
+    }
+
+    /// Requeue failed delivery with a fresh bounded retry budget. Preserve its
+    /// payload, ID, total attempts and previous failure; never send HTTP here.
+    pub fn retry(&self, id: &str) -> Result<Delivery> {
+        validate_id(id)?;
+        let config = self
+            .workspace
+            .config
+            .webhook
+            .as_ref()
+            .context("webhook is not configured")?;
+        config.validate()?;
+        config.authorization()?;
+        let _lease = Lease::acquire_wait(
+            &self.workspace.store.root.join(".webhooks.lock"),
+            Duration::from_millis(100),
+        )?;
+        let mut delivery = self.get(id)?;
+        if delivery.status != "failed" {
+            return Err(RetryConflict.into());
+        }
+        if delivery.attempts == u32::MAX {
+            bail!("webhook total attempt count is exhausted");
+        }
+        let requested_at = now_millis();
+        delivery.retries.push(ManualRetry {
+            requested_at,
+            attempts: delivery.attempts,
+            last_attempt_at: delivery.last_attempt_at,
+            http_status: delivery.http_status,
+            error: delivery.error.take(),
+        });
+        delivery.attempts_at_retry = delivery.attempts;
+        delivery.http_status = None;
+        delivery.status = "pending".into();
+        delivery.next_attempt_at = requested_at;
+        write_json(&self.path(id)?, &delivery)?;
+        Ok(delivery)
     }
 
     /// Send each currently due notification at most once in this call. Persist
@@ -222,7 +293,7 @@ impl Webhooks {
             if delivery.status == "sending" {
                 // The receiver may already have accepted a request before process
                 // death. Count that attempt and retain the stable idempotency key.
-                delivery.status = if delivery.attempts >= config.max_attempts {
+                delivery.status = if delivery.attempts_since_retry()? >= config.max_attempts {
                     "failed"
                 } else {
                     "pending"
@@ -238,14 +309,17 @@ impl Webhooks {
             if delivery.status != "pending" || delivery.next_attempt_at > now {
                 continue;
             }
-            if delivery.attempts >= config.max_attempts {
+            if delivery.attempts_since_retry()? >= config.max_attempts {
                 delivery.status = "failed".into();
                 write_json(&self.path(&delivery.id)?, &delivery)?;
                 outcomes.push(delivery);
                 continue;
             }
             delivery.status = "sending".into();
-            delivery.attempts += 1;
+            delivery.attempts = delivery
+                .attempts
+                .checked_add(1)
+                .context("webhook total attempt count is exhausted")?;
             delivery.last_attempt_at = Some(now_millis());
             write_json(&self.path(&delivery.id)?, &delivery)?;
             let mut request = client
@@ -295,16 +369,17 @@ impl Webhooks {
                 }
             };
             if delivery.status != "delivered" {
-                delivery.status = if retryable && delivery.attempts < config.max_attempts {
-                    "pending"
-                } else {
-                    "failed"
-                }
-                .into();
+                delivery.status =
+                    if retryable && delivery.attempts_since_retry()? < config.max_attempts {
+                        "pending"
+                    } else {
+                        "failed"
+                    }
+                    .into();
                 if delivery.status == "pending" {
                     let base = u64::try_from(parse_duration(&config.retry_delay)?.as_millis())?;
                     let backoff = base
-                        .saturating_mul(1u64 << (delivery.attempts - 1))
+                        .saturating_mul(1u64 << (delivery.attempts_since_retry()? - 1))
                         .min(3_600_000);
                     delivery.next_attempt_at =
                         now_millis().saturating_add(backoff.max(retry_after));

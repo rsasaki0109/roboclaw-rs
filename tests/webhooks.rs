@@ -420,3 +420,176 @@ fn terminal_failure_is_delivered_but_running_and_legacy_records_are_excluded() {
     );
     worker.join().unwrap();
 }
+
+#[test]
+fn manual_retry_keeps_identity_payload_counts_and_failure_history_without_sending() {
+    let project = Project::new();
+    let server = Server::http("127.0.0.1:0").unwrap();
+    configure(&project, &server, "  max_attempts: 1\n");
+    project.json(&["run", "wave_arm"]);
+    let (worker, received) = receiver(server, vec![401, 200]);
+    let webhook = dispatcher(&project);
+    let failed = webhook
+        .dispatch(100, &ExecutionControl::default())
+        .unwrap()
+        .remove(0);
+    assert_eq!(failed.status, "failed");
+    let retried = project.json(&["webhooks", "retry", &failed.id]);
+    assert_eq!(retried["status"], "pending");
+    assert_eq!(retried["id"], failed.id);
+    assert_eq!(retried["payload"], failed.payload);
+    assert_eq!(retried["attempts"], 1);
+    assert_eq!(retried["attempts_at_retry"], 1);
+    assert_eq!(retried["retries"][0]["http_status"], 401);
+    assert_eq!(retried["retries"][0]["error"], "receiver returned HTTP 401");
+    assert_eq!(
+        retried["retries"][0]["last_attempt_at"],
+        failed.last_attempt_at.unwrap()
+    );
+    assert!(retried["retries"][0]["requested_at"].is_number());
+    assert!(retried["error"].is_null());
+    let first = received.recv_timeout(Duration::from_secs(5)).unwrap();
+    assert!(
+        received.try_recv().is_err(),
+        "retry must queue without HTTP"
+    );
+    assert!(!project
+        .command()
+        .args(["webhooks", "retry", &failed.id])
+        .output()
+        .unwrap()
+        .status
+        .success());
+    let delivered = dispatcher(&project)
+        .dispatch(100, &ExecutionControl::default())
+        .unwrap()
+        .remove(0);
+    assert_eq!(delivered.status, "delivered");
+    assert_eq!(delivered.attempts, 2);
+    assert_eq!(delivered.retries.len(), 1);
+    assert_eq!(
+        first,
+        received.recv_timeout(Duration::from_secs(5)).unwrap()
+    );
+    worker.join().unwrap();
+    assert!(webhook.retry(&failed.id).is_err());
+    assert_eq!(webhook.workspace.store.runs().unwrap().len(), 1);
+    assert_eq!(webhook.workspace.store.sessions().unwrap()[0].run_count, 1);
+}
+
+#[test]
+fn manual_retry_restores_bounded_budget_backoff_and_supports_repeated_retries() {
+    let project = Project::new();
+    let server = Server::http("127.0.0.1:0").unwrap();
+    configure(&project, &server, "  max_attempts: 2\n");
+    project.json(&["run", "wave_arm"]);
+    let mut failed = dispatcher(&project).list().unwrap().remove(0);
+    // A legacy record stopped after exhausting its original two attempts.
+    failed.status = "failed".into();
+    failed.attempts = 2;
+    failed.error = Some("receiver returned HTTP 503".into());
+    failed.http_status = Some(503);
+    let mut legacy = serde_json::to_value(&failed).unwrap();
+    legacy.as_object_mut().unwrap().remove("attempts_at_retry");
+    legacy.as_object_mut().unwrap().remove("retries");
+    write_json(
+        &project
+            .root
+            .join("target/roboclaw/webhooks")
+            .join(format!("{}.json", failed.id)),
+        &legacy,
+    )
+    .unwrap();
+    let (worker, received) = receiver(server, vec![503, 503, 200]);
+    let webhook = dispatcher(&project);
+    webhook.retry(&failed.id).unwrap();
+    let first = webhook
+        .dispatch(100, &ExecutionControl::default())
+        .unwrap()
+        .remove(0);
+    assert_eq!(first.status, "pending");
+    assert_eq!(first.attempts, 3);
+    let delay = first.next_attempt_at - roboclaw_rs::storage::now_millis();
+    assert!(
+        delay <= 1000 && delay > 500,
+        "backoff must restart at 1s: {delay}"
+    );
+    due(&project, first);
+    let exhausted = webhook
+        .dispatch(100, &ExecutionControl::default())
+        .unwrap()
+        .remove(0);
+    assert_eq!(exhausted.status, "failed");
+    assert_eq!(exhausted.attempts, 4);
+    assert!(webhook
+        .dispatch(100, &ExecutionControl::default())
+        .unwrap()
+        .is_empty());
+    let retried = webhook.retry(&failed.id).unwrap();
+    assert_eq!(retried.retries.len(), 2);
+    assert_eq!(retried.attempts_at_retry, 4);
+    assert_eq!(retried.retries[0].attempts, 2);
+    assert_eq!(retried.retries[1].attempts, 4);
+    let delivered = webhook
+        .dispatch(100, &ExecutionControl::default())
+        .unwrap()
+        .remove(0);
+    assert_eq!(delivered.status, "delivered");
+    assert_eq!(delivered.attempts, 5);
+    assert_eq!(delivered.retries.len(), 2);
+    for _ in 0..3 {
+        assert_eq!(
+            received.recv_timeout(Duration::from_secs(5)).unwrap().1,
+            failed.id
+        );
+    }
+    worker.join().unwrap();
+}
+
+#[test]
+fn manual_retry_rejects_disabled_credentials_busy_sender_and_other_states_without_mutation() {
+    let project = Project::new();
+    let server = Server::http("127.0.0.1:0").unwrap();
+    configure(&project, &server, "");
+    project.json(&["run", "wave_arm"]);
+    let webhook = dispatcher(&project);
+    let mut delivery = webhook.list().unwrap().remove(0);
+    for status in ["pending", "sending", "delivered"] {
+        delivery.status = status.into();
+        due(&project, delivery.clone());
+        assert!(webhook
+            .retry(&delivery.id)
+            .unwrap_err()
+            .downcast_ref::<roboclaw_rs::webhooks::RetryConflict>()
+            .is_some());
+        assert!(webhook.get(&delivery.id).unwrap().retries.is_empty());
+    }
+    delivery.status = "failed".into();
+    due(&project, delivery.clone());
+    let path = project
+        .root
+        .join("target/roboclaw/webhooks")
+        .join(format!("{}.json", delivery.id));
+    let before = fs::read(&path).unwrap();
+    {
+        let _lease = Lease::acquire(&webhook.workspace.store.root.join(".webhooks.lock")).unwrap();
+        assert!(webhook.retry(&delivery.id).is_err());
+    }
+    project.config(
+        "webhook:\n  url: https://example.com/notify\n  token_env: ROBOCLAW_MISSING_TEST_TOKEN\n",
+    );
+    let output = project
+        .command()
+        .env_remove("ROBOCLAW_MISSING_TEST_TOKEN")
+        .args(["webhooks", "retry", &delivery.id])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    project.config("webhook: null\n");
+    assert!(dispatcher(&project).retry(&delivery.id).is_err());
+    assert_eq!(fs::read(&path).unwrap(), before);
+    assert!(server
+        .recv_timeout(Duration::from_millis(30))
+        .unwrap()
+        .is_none());
+}
